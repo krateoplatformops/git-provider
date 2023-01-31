@@ -10,9 +10,8 @@ spec:
   group: git.krateo.io
   names:
     categories:
-    - crossplane
-    - krateo
     - git
+    - krateo
     kind: Repo
     listKind: RepoList
     plural: repoes
@@ -25,9 +24,6 @@ spec:
       type: string
     - jsonPath: .status.conditions[?(@.type=='Synced')].status
       name: SYNCED
-      type: string
-    - jsonPath: .status.atProvider.deploymentId
-      name: DEPLOYMENT_ID
       type: string
     - jsonPath: .metadata.creationTimestamp
       name: AGE
@@ -85,20 +81,6 @@ spec:
               fromRepo:
                 description: 'FromRepo: repo origin to copy from'
                 properties:
-                  path:
-                    description: 'Path: name of the folder in the git repository to
-                      copy from (or to).'
-                    type: string
-                  url:
-                    description: 'Url: the repository URL.'
-                    type: string
-                required:
-                - url
-                type: object
-              fromRepoCredentials:
-                description: FromRepoCredentials required to authenticate ReST API
-                  git server.
-                properties:
                   authMethod:
                     description: AuthMethod defines the authentication mode. One of
                       'basic' or 'bearer'
@@ -138,8 +120,16 @@ spec:
                         - namespace
                         type: object
                     type: object
+                  path:
+                    description: 'Path: name of the folder in the git repository to
+                      copy from (or to).'
+                    type: string
+                  url:
+                    description: 'Url: the repository URL.'
+                    type: string
                 required:
                 - credentials
+                - url
                 type: object
               insecure:
                 description: 'Insecure is useful with hand made SSL certs (default:
@@ -148,19 +138,6 @@ spec:
               toRepo:
                 description: 'ToRepo: repo destination to copy to'
                 properties:
-                  path:
-                    description: 'Path: name of the folder in the git repository to
-                      copy from (or to).'
-                    type: string
-                  url:
-                    description: 'Url: the repository URL.'
-                    type: string
-                required:
-                - url
-                type: object
-              toRepoCredentials:
-                description: ToCredentials required to authenticate ReST API git server.
-                properties:
                   authMethod:
                     description: AuthMethod defines the authentication mode. One of
                       'basic' or 'bearer'
@@ -200,8 +177,16 @@ spec:
                         - namespace
                         type: object
                     type: object
+                  path:
+                    description: 'Path: name of the folder in the git repository to
+                      copy from (or to).'
+                    type: string
+                  url:
+                    description: 'Url: the repository URL.'
+                    type: string
                 required:
                 - credentials
+                - url
                 type: object
             required:
             - deploymentServiceUrl

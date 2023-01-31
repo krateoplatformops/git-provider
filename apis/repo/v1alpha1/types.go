@@ -5,16 +5,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// RepoCredentials required to authenticate.
-type RepoCredentials struct {
-	// Credentials required to authenticate ReST API git server.
-	Credentials *commonv1.CredentialSelectors `json:"credentials"`
-
-	// AuthMethod defines the authentication mode. One of 'basic' or 'bearer'
-	// +optional
-	AuthMethod *string `json:"authMethod,omitempty"`
-}
-
 type RepoOpts struct {
 	// Url: the repository URL.
 	// +immutable
@@ -25,6 +15,13 @@ type RepoOpts struct {
 	// +optional
 	// +immutable
 	Path *string `json:"path,omitempty"`
+
+	// Credentials required to authenticate ReST API git server.
+	Credentials *commonv1.CredentialSelectors `json:"credentials"`
+
+	// AuthMethod defines the authentication mode. One of 'basic' or 'bearer'
+	// +optional
+	AuthMethod *string `json:"authMethod,omitempty"`
 }
 
 // A RepoSpec defines the desired state of a Repo.
@@ -47,12 +44,6 @@ type RepoSpec struct {
 	// +immutable
 	DeploymentServiceUrl string `json:"deploymentServiceUrl"`
 
-	// FromRepoCredentials required to authenticate ReST API git server.
-	FromRepoCredentials *RepoCredentials `json:"fromRepoCredentials,omitempty"`
-
-	// ToCredentials required to authenticate ReST API git server.
-	ToRepoCredentials *RepoCredentials `json:"toRepoCredentials,omitempty"`
-
 	// Insecure is useful with hand made SSL certs (default: false)
 	// +optional
 	Insecure *bool `json:"insecure,omitempty"`
@@ -71,10 +62,9 @@ type RepoStatus struct {
 // A Repo is a managed resource that represents a Krateo Git Repository
 // +kubebuilder:printcolumn:name="READY",type="string",JSONPath=".status.conditions[?(@.type=='Ready')].status"
 // +kubebuilder:printcolumn:name="SYNCED",type="string",JSONPath=".status.conditions[?(@.type=='Synced')].status"
-// +kubebuilder:printcolumn:name="DEPLOYMENT_ID",type="string",JSONPath=".status.atProvider.deploymentId"
 // +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"
 // +kubebuilder:subresource:status
-// +kubebuilder:resource:scope=Cluster,categories={crossplane,krateo,git}
+// +kubebuilder:resource:scope=Cluster,categories={git,krateo}
 type Repo struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

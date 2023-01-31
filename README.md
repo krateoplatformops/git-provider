@@ -16,7 +16,7 @@ You’ll need a Kubernetes cluster to run against.
 ```sh
 $ helm repo add krateo https://charts.krateo.io
 $ helm repo update krateo
-$ helm install git-provider krateo/git-provider --namespace krateo-system --create-namespace
+$ helm install git-provider krateo/git-provider
 ```
 
 2. Install Instances of Custom Resources:

@@ -93,10 +93,10 @@ func (in *RepoOpts) DeepCopyInto(out *RepoOpts) {
 		*out = new(string)
 		**out = **in
 	}
-	if in.Credentials != nil {
-		in, out := &in.Credentials, &out.Credentials
-		*out = new(v1.CredentialSelectors)
-		(*in).DeepCopyInto(*out)
+	if in.SecretRef != nil {
+		in, out := &in.SecretRef, &out.SecretRef
+		*out = new(v1.SecretKeySelector)
+		**out = **in
 	}
 	if in.AuthMethod != nil {
 		in, out := &in.AuthMethod, &out.AuthMethod

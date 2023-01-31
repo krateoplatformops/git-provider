@@ -43,10 +43,10 @@ podContainerPorts:
 
 # put your env variables here
 podEnv:
-  - name: GITHUB_PROVIDER_DEBUG
+  - name: GIT_PROVIDER_DEBUG
     value: "true"
-  - name: GITHUB_PROVIDER_POLL_INTERVAL
-    value: "2m"
+  - name: GIT_PROVIDER_POLL_INTERVAL
+    value: "3m"
 
 
 resources:

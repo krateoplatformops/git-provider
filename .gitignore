@@ -45,7 +45,7 @@ experiments/**
 **/password.txt
 **/token.txt
 
-# Crossplane stuffs
+# Work stuffs
 /.cache
 /.work
 /_output

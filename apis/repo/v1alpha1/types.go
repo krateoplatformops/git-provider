@@ -16,8 +16,8 @@ type RepoOpts struct {
 	// +immutable
 	Path *string `json:"path,omitempty"`
 
-	// Credentials required to authenticate ReST API git server.
-	Credentials *commonv1.CredentialSelectors `json:"credentials"`
+	// SecretRef: holds credentials required to git server authentication.
+	SecretRef *commonv1.SecretKeySelector `json:"secretRef"`
 
 	// AuthMethod defines the authentication mode. One of 'basic' or 'bearer'
 	// +optional

@@ -6,6 +6,10 @@ metadata:
 spec:
   progressDeadlineSeconds: 600
   replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Chart.Name }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
   strategy:
     rollingUpdate:
       maxSurge: 25%

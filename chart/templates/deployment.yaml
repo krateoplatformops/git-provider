@@ -20,6 +20,8 @@ spec:
       name: {{ .Chart.Name }}
       namespace: {{ .Release.Namespace }}
       labels:
+        app.kubernetes.io/name: {{ .Chart.Name }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
       containers:
       - name: {{ .Chart.Name }}

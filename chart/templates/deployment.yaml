@@ -25,7 +25,7 @@ spec:
     spec:
       containers:
       - name: {{ .Chart.Name }}
-        image: ghcr.io/krateoplatformops/{{ .Chart.Name }}:{{ .Chart.AppVersion }}"
+        image: ghcr.io/krateoplatformops/{{ .Chart.Name }}:{{ .Chart.AppVersion }}
         imagePullPolicy: IfNotPresent
         env:
         - name: GIT_PROVIDER_DEBUG

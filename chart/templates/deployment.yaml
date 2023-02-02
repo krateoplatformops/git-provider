@@ -19,6 +19,7 @@ spec:
     metadata:
       name: {{ .Chart.Name }}
       namespace: {{ .Release.Namespace }}
+      labels:
     spec:
       containers:
       - name: {{ .Chart.Name }}

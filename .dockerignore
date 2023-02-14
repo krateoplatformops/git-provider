@@ -3,6 +3,7 @@
 bin/
 testbin/
 chart/
+crds/
 hack/
 samples/
 README.md

@@ -60,22 +60,3 @@ jobs:
           build-args: |
             ${{steps.tagger.outputs.version-without-v}}
 
-      - uses: actions/setup-go@v3
-        with:
-          go-version: '^1.19' # The Go version to download (if necessary) and use.
-  
-      - name: Generate CRDs
-        run: go generate ./...
-
-      - name: Replace Version in Chart.yaml
-        run: sed -i 's/VERSION/${{ steps.tagger.outputs.version-without-v }}/g' ./chart/Chart.yaml
-
-      - name: Publish Helm chart
-        uses: stefanprodan/helm-gh-pages@master
-        with:
-          token: ${{ secrets.HELM_CHARTS_BOT }}
-          charts_dir: ./
-          charts_url: https://charts.krateo.io
-          owner: krateoplatformops
-          repository: helm-charts
-          branch: gh-pages

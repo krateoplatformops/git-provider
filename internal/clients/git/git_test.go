@@ -11,7 +11,7 @@ import (
 )
 
 func TestClone(t *testing.T) {
-	setEnv()
+	//setEnv()
 
 	repo, err := Clone(CloneOptions{
 		URL: os.Getenv("URL"),
@@ -34,9 +34,4 @@ func TestClone(t *testing.T) {
 	for _, el := range all {
 		t.Log(el.Name())
 	}
-}
-
-func setEnv() {
-	os.Setenv("URL", "https://Kiratech-BancaSella@dev.azure.com/Kiratech-BancaSella/Test%20project%20created%20by%20Krateo/_git/AZ%20DevOps%20Krateo%20Provider%20Repo")
-	os.Setenv("TOKEN", "feqra3spfjkfma6bbnb5nuslfae7wvoagh3lhjc56xhuch2nyiaa")
 }

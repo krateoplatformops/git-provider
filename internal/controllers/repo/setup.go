@@ -7,12 +7,12 @@ import (
 
 	repov1alpha1 "github.com/krateoplatformops/git-provider/apis/repo/v1alpha1"
 	"github.com/krateoplatformops/provider-runtime/pkg/helpers"
+	"github.com/krateoplatformops/provider-runtime/pkg/reconciler"
 
 	"github.com/krateoplatformops/provider-runtime/pkg/controller"
 	"github.com/krateoplatformops/provider-runtime/pkg/event"
 	"github.com/krateoplatformops/provider-runtime/pkg/logging"
 	"github.com/krateoplatformops/provider-runtime/pkg/ratelimiter"
-	"github.com/krateoplatformops/provider-runtime/pkg/reconciler/managed"
 	"github.com/krateoplatformops/provider-runtime/pkg/resource"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -26,21 +26,21 @@ import (
 
 // Setup adds a controller that reconciles Token managed resources.
 func Setup(mgr ctrl.Manager, o controller.Options) error {
-	name := managed.ControllerName(repov1alpha1.RepoGroupKind)
+	name := reconciler.ControllerName(repov1alpha1.RepoGroupKind)
 
 	log := o.Logger.WithValues("controller", name)
 
 	recorder := mgr.GetEventRecorderFor(name)
 
-	r := managed.NewReconciler(mgr,
+	r := reconciler.NewReconciler(mgr,
 		resource.ManagedKind(repov1alpha1.RepoGroupVersionKind),
-		managed.WithExternalConnecter(&connector{
+		reconciler.WithExternalConnecter(&connector{
 			kube:     mgr.GetClient(),
 			log:      log,
 			recorder: recorder,
 		}),
-		managed.WithLogger(log),
-		managed.WithRecorder(event.NewAPIRecorder(recorder)))
+		reconciler.WithLogger(log),
+		reconciler.WithRecorder(event.NewAPIRecorder(recorder)))
 
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(name).
@@ -55,7 +55,7 @@ type connector struct {
 	recorder record.EventRecorder
 }
 
-func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.ExternalClient, error) {
+func (c *connector) Connect(ctx context.Context, mg resource.Managed) (reconciler.ExternalClient, error) {
 	cr, ok := mg.(*repov1alpha1.Repo)
 	if !ok {
 		return nil, errors.New(errNotRepo)
@@ -75,10 +75,11 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 }
 
 type externalClientOpts struct {
-	Insecure             bool
-	DeploymentServiceUrl string
-	FromRepoCreds        transport.AuthMethod
-	ToRepoCreds          transport.AuthMethod
+	Insecure                bool
+	UnsupportedCapabilities bool
+	DeploymentServiceUrl    string
+	FromRepoCreds           transport.AuthMethod
+	ToRepoCreds             transport.AuthMethod
 }
 
 func loadExternalClientOpts(ctx context.Context, kc client.Client, cr *repov1alpha1.Repo) (*externalClientOpts, error) {
@@ -97,10 +98,11 @@ func loadExternalClientOpts(ctx context.Context, kc client.Client, cr *repov1alp
 	}
 
 	return &externalClientOpts{
-		Insecure:             helpers.BoolValue(cr.Spec.Insecure),
-		DeploymentServiceUrl: cr.Spec.DeploymentServiceUrl,
-		FromRepoCreds:        fromRepoCreds,
-		ToRepoCreds:          toRepoCreds,
+		Insecure:                helpers.Bool(cr.Spec.Insecure),
+		UnsupportedCapabilities: helpers.Bool(cr.Spec.UnsupportedCapabilities),
+		DeploymentServiceUrl:    cr.Spec.DeploymentServiceUrl,
+		FromRepoCreds:           fromRepoCreds,
+		ToRepoCreds:             toRepoCreds,
 	}, nil
 }
 
@@ -115,7 +117,7 @@ func getRepoCredentials(ctx context.Context, k client.Client, opts repov1alpha1.
 		return nil, err
 	}
 
-	authMethod := helpers.StringValue(opts.AuthMethod)
+	authMethod := helpers.String(opts.AuthMethod)
 	if strings.EqualFold(authMethod, "bearer") {
 		return &http.TokenAuth{
 			Token: token,

@@ -47,6 +47,13 @@ type RepoSpec struct {
 	// Insecure is useful with hand made SSL certs (default: false)
 	// +optional
 	Insecure *bool `json:"insecure,omitempty"`
+
+	// UnsupportedCapabilities enable Go-Git transport.UnsupportedCapabilities (default: false)
+	// Azure DevOps requires capabilities multi_ack / multi_ack_detailed,
+	// which are not fully implemented in go-git library and by default
+	// are included in transport.UnsupportedCapabilities.
+	// +optional
+	UnsupportedCapabilities *bool `json:"unsupportedCapabilities,omitempty"`
 }
 
 // A RepoStatus represents the observed state of a Repo.

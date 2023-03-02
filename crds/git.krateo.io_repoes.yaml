@@ -55,10 +55,10 @@ spec:
                     description: The key to select.
                     type: string
                   name:
-                    description: Name of the configmap.
+                    description: Name of the referenced object.
                     type: string
                   namespace:
-                    description: Namespace of the configmap.
+                    description: Namespace of the referenced object.
                     type: string
                 required:
                 - key
@@ -97,10 +97,10 @@ spec:
                         description: The key to select.
                         type: string
                       name:
-                        description: Name of the secret.
+                        description: Name of the referenced object.
                         type: string
                       namespace:
-                        description: Namespace of the secret.
+                        description: Namespace of the referenced object.
                         type: string
                     required:
                     - key
@@ -137,10 +137,10 @@ spec:
                         description: The key to select.
                         type: string
                       name:
-                        description: Name of the secret.
+                        description: Name of the referenced object.
                         type: string
                       namespace:
-                        description: Namespace of the secret.
+                        description: Namespace of the referenced object.
                         type: string
                     required:
                     - key
@@ -154,6 +154,12 @@ spec:
                 - secretRef
                 - url
                 type: object
+              unsupportedCapabilities:
+                description: 'UnsupportedCapabilities enable Go-Git transport.UnsupportedCapabilities
+                  (default: false) Azure DevOps requires capabilities multi_ack /
+                  multi_ack_detailed, which are not fully implemented in go-git library
+                  and by default are included in transport.UnsupportedCapabilities.'
+                type: boolean
             required:
             - deploymentServiceUrl
             - fromRepo

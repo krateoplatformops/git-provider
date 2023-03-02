@@ -20,7 +20,7 @@ import (
 	"github.com/krateoplatformops/provider-runtime/pkg/logging"
 	"github.com/krateoplatformops/provider-runtime/pkg/meta"
 
-	"github.com/krateoplatformops/provider-runtime/pkg/reconciler/managed"
+	"github.com/krateoplatformops/provider-runtime/pkg/reconciler"
 	"github.com/krateoplatformops/provider-runtime/pkg/resource"
 
 	repov1alpha1 "github.com/krateoplatformops/git-provider/apis/repo/v1alpha1"
@@ -50,14 +50,14 @@ type external struct {
 	rec  record.EventRecorder
 }
 
-func (e *external) Observe(ctx context.Context, mg resource.Managed) (managed.ExternalObservation, error) {
+func (e *external) Observe(ctx context.Context, mg resource.Managed) (reconciler.ExternalObservation, error) {
 	cr, ok := mg.(*repov1alpha1.Repo)
 	if !ok {
-		return managed.ExternalObservation{}, errors.New(errNotRepo)
+		return reconciler.ExternalObservation{}, errors.New(errNotRepo)
 	}
 
 	if meta.WasDeleted(cr) {
-		return managed.ExternalObservation{
+		return reconciler.ExternalObservation{
 			ResourceExists:   true,
 			ResourceUpToDate: true,
 		}, nil
@@ -65,12 +65,12 @@ func (e *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 
 	deploymentID := getDeploymentId(mg)
 	if len(deploymentID) == 0 {
-		return managed.ExternalObservation{}, errors.New(errMissingDeploymentIdLabel)
+		return reconciler.ExternalObservation{}, errors.New(errMissingDeploymentIdLabel)
 	}
 
 	spec := cr.Spec.DeepCopy()
 
-	fromPath := helpers.StringValue(spec.FromRepo.Path)
+	fromPath := helpers.String(spec.FromRepo.Path)
 	if len(fromPath) > 0 {
 		js, err := resource.GetConfigMapValue(ctx, e.kube, spec.ConfigMapKeyRef)
 		if err != nil {
@@ -78,23 +78,28 @@ func (e *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 				"name", spec.ConfigMapKeyRef.Name,
 				"key", spec.ConfigMapKeyRef.Key,
 				"namespace", spec.ConfigMapKeyRef.Namespace)
-			return managed.ExternalObservation{}, errors.New(errUnableToLoadConfigMapWithValues)
+			return reconciler.ExternalObservation{}, errors.New(errUnableToLoadConfigMapWithValues)
 		}
 
 		if strings.TrimSpace(js) == "" {
-			return managed.ExternalObservation{}, errors.New(errConfigMapValuesNotReadyYet)
+			return reconciler.ExternalObservation{}, errors.New(errConfigMapValuesNotReadyYet)
 		}
 	}
 
-	toRepo, err := git.Clone(spec.ToRepo.Url, e.cfg.ToRepoCreds, e.cfg.Insecure)
+	toRepo, err := git.Clone(git.CloneOptions{
+		URL:                     spec.ToRepo.Url,
+		Auth:                    e.cfg.ToRepoCreds,
+		Insecure:                e.cfg.Insecure,
+		UnsupportedCapabilities: e.cfg.UnsupportedCapabilities,
+	})
 	if err != nil {
-		return managed.ExternalObservation{}, err
+		return reconciler.ExternalObservation{}, err
 	}
 	e.log.Debug("Target repo cloned", "url", spec.ToRepo.Url)
 
 	clmOk, err := toRepo.Exists("deployment.yaml")
 	if err != nil {
-		return managed.ExternalObservation{}, err
+		return reconciler.ExternalObservation{}, err
 	}
 
 	if clmOk {
@@ -103,7 +108,7 @@ func (e *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 		cr.Status.DeploymentId = helpers.StringPtr(getDeploymentId(mg))
 		cr.SetConditions(commonv1.Available())
 
-		return managed.ExternalObservation{
+		return reconciler.ExternalObservation{
 			ResourceExists:   true,
 			ResourceUpToDate: true,
 		}, nil
@@ -111,7 +116,7 @@ func (e *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 
 	e.log.Debug("Target repo is empty", "url", spec.ToRepo.Url)
 
-	return managed.ExternalObservation{
+	return reconciler.ExternalObservation{
 		ResourceExists:   false,
 		ResourceUpToDate: true,
 	}, nil
@@ -137,14 +142,24 @@ func (e *external) Create(ctx context.Context, mg resource.Managed) error {
 	e.log.Debug("Claim fetched", "deploymentId", deploymentId)
 	e.rec.Eventf(cr, corev1.EventTypeNormal, "ClaimFetched", "Successfully fetched claim for deployment: %s", deploymentId)
 
-	toRepo, err := git.Clone(spec.ToRepo.Url, e.cfg.ToRepoCreds, e.cfg.Insecure)
+	toRepo, err := git.Clone(git.CloneOptions{
+		URL:                     spec.ToRepo.Url,
+		Auth:                    e.cfg.ToRepoCreds,
+		Insecure:                e.cfg.Insecure,
+		UnsupportedCapabilities: e.cfg.UnsupportedCapabilities,
+	})
 	if err != nil {
 		return err
 	}
 	e.log.Debug("Target repo cloned", "url", spec.ToRepo.Url)
 	e.rec.Eventf(cr, corev1.EventTypeNormal, "TargetRepoCloned", "Successfully cloned target repo: %s", spec.ToRepo.Url)
 
-	fromRepo, err := git.Clone(spec.FromRepo.Url, e.cfg.FromRepoCreds, e.cfg.Insecure)
+	fromRepo, err := git.Clone(git.CloneOptions{
+		URL:                     spec.FromRepo.Url,
+		Auth:                    e.cfg.FromRepoCreds,
+		Insecure:                e.cfg.Insecure,
+		UnsupportedCapabilities: e.cfg.UnsupportedCapabilities,
+	})
 	if err != nil {
 		return err
 	}
@@ -163,7 +178,7 @@ func (e *external) Create(ctx context.Context, mg resource.Managed) error {
 	}
 
 	// If fromPath is not specified DON'T COPY!
-	fromPath := helpers.StringValue(spec.FromRepo.Path)
+	fromPath := helpers.String(spec.FromRepo.Path)
 	if len(fromPath) > 0 {
 		values, err := e.loadValuesFromConfigMap(ctx, spec.ConfigMapKeyRef)
 		if err != nil {
@@ -185,7 +200,7 @@ func (e *external) Create(ctx context.Context, mg resource.Managed) error {
 
 		createRenderFunc(co, values)
 
-		toPath := helpers.StringValue(spec.ToRepo.Path)
+		toPath := helpers.String(spec.ToRepo.Path)
 		if len(toPath) == 0 {
 			toPath = "/"
 		}
@@ -204,8 +219,8 @@ func (e *external) Create(ctx context.Context, mg resource.Managed) error {
 		"deploymentId", deploymentId,
 		"fromUrl", spec.FromRepo.Url,
 		"toUrl", spec.ToRepo.Url,
-		"fromPath", helpers.StringValue(spec.FromRepo.Path),
-		"toPath", helpers.StringValue(spec.ToRepo.Path))
+		"fromPath", helpers.String(spec.FromRepo.Path),
+		"toPath", helpers.String(spec.ToRepo.Path))
 	e.rec.Eventf(cr, corev1.EventTypeNormal, "RepoSyncSuccess", "Origin and target repo synchronized")
 
 	commitId, err := toRepo.Commit(".", ":rocket: first commit")

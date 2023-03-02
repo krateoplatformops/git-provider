@@ -8,10 +8,11 @@ import (
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
+	"github.com/lucasepe/dotenv"
 )
 
 func TestClone(t *testing.T) {
-	//setEnv()
+	setEnv()
 
 	repo, err := Clone(CloneOptions{
 		URL: os.Getenv("URL"),
@@ -34,4 +35,9 @@ func TestClone(t *testing.T) {
 	for _, el := range all {
 		t.Log(el.Name())
 	}
+}
+
+func setEnv() {
+	env, _ := dotenv.FromFile("../../../.env")
+	dotenv.PutInEnv(env, false)
 }

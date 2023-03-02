@@ -9,6 +9,7 @@ require (
 	github.com/go-git/go-billy/v5 v5.4.0
 	github.com/go-git/go-git/v5 v5.5.2
 	github.com/krateoplatformops/provider-runtime v0.4.7
+	github.com/lucasepe/dotenv v0.1.0
 	github.com/pkg/errors v0.9.1
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06
 	github.com/stoewer/go-strcase v1.2.0

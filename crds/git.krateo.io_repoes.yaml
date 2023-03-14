@@ -19,11 +19,18 @@ spec:
   scope: Cluster
   versions:
   - additionalPrinterColumns:
+    - jsonPath: .status.commitId
+      name: COMMIT_ID
+      type: string
+    - jsonPath: .status.branch
+      name: BRANCH
+      type: string
     - jsonPath: .status.conditions[?(@.type=='Ready')].status
       name: READY
       type: string
     - jsonPath: .status.conditions[?(@.type=='Synced')].status
       name: SYNCED
+      priority: 10
       type: string
     - jsonPath: .metadata.creationTimestamp
       name: AGE
@@ -74,16 +81,15 @@ spec:
                 - Orphan
                 - Delete
                 type: string
-              deploymentServiceUrl:
-                description: 'DeploymentServiceUrl: the baseUrl for the Deployment
-                  service.'
-                type: string
               fromRepo:
                 description: 'FromRepo: repo origin to copy from'
                 properties:
                   authMethod:
                     description: AuthMethod defines the authentication mode. One of
                       'basic' or 'bearer'
+                    type: string
+                  branch:
+                    description: 'Branch: in the git repository to copy from (or to).'
                     type: string
                   path:
                     description: 'Path: name of the folder in the git repository to
@@ -125,6 +131,9 @@ spec:
                     description: AuthMethod defines the authentication mode. One of
                       'basic' or 'bearer'
                     type: string
+                  branch:
+                    description: 'Branch: in the git repository to copy from (or to).'
+                    type: string
                   path:
                     description: 'Path: name of the folder in the git repository to
                       copy from (or to).'
@@ -161,13 +170,18 @@ spec:
                   and by default are included in transport.UnsupportedCapabilities.'
                 type: boolean
             required:
-            - deploymentServiceUrl
             - fromRepo
             - toRepo
             type: object
           status:
             description: A RepoStatus represents the observed state of a Repo.
             properties:
+              branch:
+                description: 'Branch: branch where commit was done'
+                type: string
+              commitId:
+                description: 'CommitId: last commit identifier'
+                type: string
               conditions:
                 description: Conditions of the resource.
                 items:
@@ -201,9 +215,6 @@ spec:
                   - type
                   type: object
                 type: array
-              deploymentId:
-                description: 'DeploymentId: correlation identifier with UI'
-                type: string
             type: object
         required:
         - spec

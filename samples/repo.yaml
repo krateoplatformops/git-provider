@@ -2,10 +2,7 @@ apiVersion: git.krateo.io/v1alpha1
 kind: Repo
 metadata:
   name: git-provider-demo
-  labels:
-    deploymentId: 626c03950944e84673f8b82b
 spec:
-  deploymentServiceUrl: http://deployment.krateoplatformops.io/
   fromRepo:
     url: https://github.com/krateoplatformops/renomy-app-template
     path: skeleton

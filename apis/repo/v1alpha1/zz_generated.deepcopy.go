@@ -93,6 +93,11 @@ func (in *RepoOpts) DeepCopyInto(out *RepoOpts) {
 		*out = new(string)
 		**out = **in
 	}
+	if in.Branch != nil {
+		in, out := &in.Branch, &out.Branch
+		*out = new(string)
+		**out = **in
+	}
 	if in.SecretRef != nil {
 		in, out := &in.SecretRef, &out.SecretRef
 		*out = new(v1.SecretKeySelector)
@@ -152,8 +157,13 @@ func (in *RepoSpec) DeepCopy() *RepoSpec {
 func (in *RepoStatus) DeepCopyInto(out *RepoStatus) {
 	*out = *in
 	in.ManagedStatus.DeepCopyInto(&out.ManagedStatus)
-	if in.DeploymentId != nil {
-		in, out := &in.DeploymentId, &out.DeploymentId
+	if in.CommitId != nil {
+		in, out := &in.CommitId, &out.CommitId
+		*out = new(string)
+		**out = **in
+	}
+	if in.Branch != nil {
+		in, out := &in.Branch, &out.Branch
 		*out = new(string)
 		**out = **in
 	}

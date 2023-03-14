@@ -2,7 +2,6 @@ package repo
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	repov1alpha1 "github.com/krateoplatformops/git-provider/apis/repo/v1alpha1"
@@ -77,16 +76,11 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (reconcile
 type externalClientOpts struct {
 	Insecure                bool
 	UnsupportedCapabilities bool
-	DeploymentServiceUrl    string
 	FromRepoCreds           transport.AuthMethod
 	ToRepoCreds             transport.AuthMethod
 }
 
 func loadExternalClientOpts(ctx context.Context, kc client.Client, cr *repov1alpha1.Repo) (*externalClientOpts, error) {
-	if len(cr.Spec.DeploymentServiceUrl) == 0 {
-		return nil, fmt.Errorf("deployment service url must be specified")
-	}
-
 	fromRepoCreds, err := getRepoCredentials(ctx, kc, cr.Spec.FromRepo)
 	if err != nil {
 		return nil, errors.Wrapf(err, "retrieving from repo credentials")
@@ -100,7 +94,6 @@ func loadExternalClientOpts(ctx context.Context, kc client.Client, cr *repov1alp
 	return &externalClientOpts{
 		Insecure:                helpers.Bool(cr.Spec.Insecure),
 		UnsupportedCapabilities: helpers.Bool(cr.Spec.UnsupportedCapabilities),
-		DeploymentServiceUrl:    cr.Spec.DeploymentServiceUrl,
 		FromRepoCreds:           fromRepoCreds,
 		ToRepoCreds:             toRepoCreds,
 	}, nil

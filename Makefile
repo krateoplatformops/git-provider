@@ -26,7 +26,7 @@ SED=$(shell which sed)
  
 .PHONY: dev
 dev: generate ## run the controller in debug mode
-	$(KUBECTL) apply -f chart/crds/ -R
+	$(KUBECTL) apply -f crds/ -R
 	go run cmd/main.go -d
 
 .PHONY: generate
@@ -56,8 +56,8 @@ kind-down: ## shuts down the KinD cluster
 
 .PHONY: demo
 demo: ## Run the demo examples
-	@$(KUBECTL) create secret generic github-secret --from-literal=token=$(SAMPLE_TOKEN) || true
-	@$(KUBECTL) apply -f samples/demo-repo.yaml
+	@$(KUBECTL) create secret generic azuredevops-endpoint --from-literal=token=$(TOKEN) || true
+	@$(KUBECTL) apply -f samples/claim.yaml
 
 
 .PHONY: help

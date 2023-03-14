@@ -13,8 +13,11 @@ type RepoOpts struct {
 	// Path: name of the folder in the git repository
 	// to copy from (or to).
 	// +optional
-	// +immutable
 	Path *string `json:"path,omitempty"`
+
+	// Branch: in the git repository to copy from (or to).
+	// +optional
+	Branch *string `json:"branch,omitempty"`
 
 	// SecretRef: holds credentials required to git server authentication.
 	SecretRef *commonv1.SecretKeySelector `json:"secretRef"`
@@ -40,10 +43,6 @@ type RepoSpec struct {
 	// +optional
 	ConfigMapKeyRef *commonv1.ConfigMapKeySelector `json:"configMapKeyRef,omitempty"`
 
-	// DeploymentServiceUrl: the baseUrl for the Deployment service.
-	// +immutable
-	DeploymentServiceUrl string `json:"deploymentServiceUrl"`
-
 	// Insecure is useful with hand made SSL certs (default: false)
 	// +optional
 	Insecure *bool `json:"insecure,omitempty"`
@@ -60,15 +59,20 @@ type RepoSpec struct {
 type RepoStatus struct {
 	commonv1.ManagedStatus `json:",inline"`
 
-	// DeploymentId: correlation identifier with UI
-	DeploymentId *string `json:"deploymentId,omitempty"`
+	// CommitId: last commit identifier
+	CommitId *string `json:"commitId,omitempty"`
+
+	// Branch: branch where commit was done
+	Branch *string `json:"branch,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
 // A Repo is a managed resource that represents a Krateo Git Repository
+// +kubebuilder:printcolumn:name="COMMIT_ID",type="string",JSONPath=".status.commitId"
+// +kubebuilder:printcolumn:name="BRANCH",type="string",JSONPath=".status.branch"
 // +kubebuilder:printcolumn:name="READY",type="string",JSONPath=".status.conditions[?(@.type=='Ready')].status"
-// +kubebuilder:printcolumn:name="SYNCED",type="string",JSONPath=".status.conditions[?(@.type=='Synced')].status"
+// +kubebuilder:printcolumn:name="SYNCED",type="string",JSONPath=".status.conditions[?(@.type=='Synced')].status",priority=10
 // +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster,categories={git,krateo}

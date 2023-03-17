@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"strings"
 
 	"github.com/cbroglie/mustache"
@@ -230,7 +229,7 @@ func (e *external) loadValuesFromConfigMap(ctx context.Context, ref *commonv1.Co
 
 func createRenderFunc(co *copier, values interface{}) {
 	co.renderFunc = func(in io.Reader, out io.Writer) error {
-		bin, err := ioutil.ReadAll(in)
+		bin, err := io.ReadAll(in)
 		if err != nil {
 			return err
 		}
@@ -250,7 +249,7 @@ func loadIgnoreFileEventually(co *copier) error {
 	}
 	defer fp.Close()
 
-	bs, err := ioutil.ReadAll(fp)
+	bs, err := io.ReadAll(fp)
 	if err != nil {
 		return err
 	}

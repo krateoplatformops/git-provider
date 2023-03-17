@@ -1,7 +1,6 @@
 package repo
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -113,21 +112,5 @@ func (co *copier) copyDir(src, dst string) (err error) {
 		}
 	}
 
-	return
-}
-
-func (co *copier) writeBytes(src []byte, dstfn string) (err error) {
-	out, err := co.toRepo.FS().Create(dstfn)
-	if err != nil {
-		return err
-	}
-
-	defer func() {
-		if e := out.Close(); e != nil {
-			err = e
-		}
-	}()
-
-	_, err = io.Copy(out, bytes.NewReader(src))
 	return
 }

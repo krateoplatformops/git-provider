@@ -114,7 +114,8 @@ func (e *external) Create(ctx context.Context, mg resource.Managed) error {
 	}
 	err = toRepo.Branch(branch)
 	if err != nil {
-		return err
+		//return err
+		e.log.Info("Switching on branch", "repoUrl", spec.ToRepo.Url, "branch", branch)
 	}
 	e.log.Debug(fmt.Sprintf("Target repo on branch %s", branch))
 

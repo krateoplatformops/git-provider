@@ -2,7 +2,6 @@ package git
 
 import (
 	"errors"
-	"fmt"
 	"io/fs"
 	"time"
 
@@ -114,9 +113,13 @@ func (s *Repo) FS() billy.Filesystem {
 	return s.fs
 }
 
+func (s *Repo) CurrentBranch() string {
+	head, _ := s.repo.Head()
+	return head.Name().Short()
+}
+
 func (s *Repo) Branch(name string) error {
-	branch := fmt.Sprintf("refs/heads/%s", name)
-	ref := plumbing.ReferenceName(branch)
+	ref := plumbing.NewBranchReferenceName(name)
 
 	h := plumbing.NewSymbolicReference(plumbing.HEAD, ref)
 	err := s.repo.Storer.SetReference(h)
@@ -170,11 +173,6 @@ func (s *Repo) Push(downstream, branch string, insecure bool) error {
 		})
 	}
 
-	headRef, err := s.repo.Head()
-	if err != nil {
-		return err
-	}
-
 	refName := plumbing.NewBranchReferenceName(branch)
 
 	refs, err := s.repo.References()
@@ -192,6 +190,11 @@ func (s *Repo) Push(downstream, branch string, insecure bool) error {
 	})
 
 	if !foundLocal {
+		headRef, err := s.repo.Head()
+		if err != nil {
+			return err
+		}
+
 		ref := plumbing.NewHashReference(refName, headRef.Hash())
 		err = s.repo.Storer.SetReference(ref)
 		if err != nil {

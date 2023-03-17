@@ -1,0 +1,29 @@
+apiVersion: git.krateo.io/v1alpha1
+kind: Repo
+metadata:
+  labels:
+    deploymentId: 70cd7df0-c350-4859-8354-3236f7c61af4
+  name: test-issue-not-push
+spec:
+  configMapKeyRef:
+    key: json
+    name: git-provider-demo-claim
+    namespace: default
+  fromRepo:
+    authMethod: basic
+    path: skeleton/spring01-pipeline
+    secretRef:
+      key: token
+      name: azuredevops-endpoint
+      namespace: default
+    url: https://Kiratech-BancaSella@dev.azure.com/Kiratech-BancaSella/Test-Sella/_git/krateo-template-microservice
+  toRepo:
+    authMethod: basic
+    branch: master
+    path: test-diego-12
+    secretRef:
+      key: token
+      name: azuredevops-endpoint
+      namespace: default
+    url: https://Kiratech-BancaSella@dev.azure.com/Kiratech-BancaSella/Test-Sella/_git/pipeline
+  unsupportedCapabilities: true

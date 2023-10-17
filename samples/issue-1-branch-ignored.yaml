@@ -1,0 +1,36 @@
+apiVersion: v1
+data:
+  organizationName: krateo
+kind: ConfigMap
+metadata:
+  name: test-diego-cm
+  namespace: default
+---
+apiVersion: git.krateo.io/v1alpha1
+kind: Repo
+metadata:
+  name: test-diego
+spec:
+  configMapKeyRef:
+    key: data
+    name: test-diego-cm
+    namespace: default
+  fromRepo:
+    authMethod: basic
+    branch: krateo
+    path: src
+    secretRef:
+      key: token
+      name: github-auth
+      namespace: default
+    url: https://github.com/matteogastaldello/fromRepo
+  toRepo:
+    authMethod: basic
+    branch: main
+    path: src
+    secretRef:
+      key: token
+      name: github-auth
+      namespace: default
+    url: https://github.com/matteogastaldello/toRepo
+  unsupportedCapabilities: true

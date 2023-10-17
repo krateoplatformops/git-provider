@@ -87,6 +87,7 @@ func (e *external) Create(ctx context.Context, mg resource.Managed) error {
 		Insecure:                e.cfg.Insecure,
 		UnsupportedCapabilities: e.cfg.UnsupportedCapabilities,
 	})
+
 	if err != nil {
 		return errors.Wrapf(err, "cloning toRepo: %s", spec.ToRepo.Url)
 	}
@@ -94,6 +95,10 @@ func (e *external) Create(ctx context.Context, mg resource.Managed) error {
 	e.rec.Eventf(cr, corev1.EventTypeNormal, "TargetRepoCloned",
 		"Successfully cloned target repo: %s", spec.ToRepo.Url)
 
+	branch := "main"
+	if spec.FromRepo.Branch != nil {
+		branch = helpers.String(spec.FromRepo.Branch)
+	}
 	fromRepo, err := git.Clone(git.CloneOptions{
 		URL:                     spec.FromRepo.Url,
 		Auth:                    e.cfg.FromRepoCreds,
@@ -106,12 +111,18 @@ func (e *external) Create(ctx context.Context, mg resource.Managed) error {
 	e.log.Debug("Origin repo cloned", "url", spec.FromRepo.Url)
 	e.rec.Eventf(cr, corev1.EventTypeNormal, "OriginRepoCloned",
 		"Successfully cloned origin repo: %s", spec.FromRepo.Url)
+	err = fromRepo.Branch(branch, true)
+	if err != nil {
+		//return err
+		e.log.Info("Switching on branch", "repoUrl", spec.FromRepo.Url, "branch", branch)
+	}
+	e.log.Debug(fmt.Sprintf("Origin repo on branch %s", branch))
 
-	branch := "main"
+	branch = "main"
 	if spec.ToRepo.Branch != nil {
 		branch = helpers.String(spec.ToRepo.Branch)
 	}
-	err = toRepo.Branch(branch)
+	err = toRepo.Branch(branch, false)
 	if err != nil {
 		//return err
 		e.log.Info("Switching on branch", "repoUrl", spec.ToRepo.Url, "branch", branch)

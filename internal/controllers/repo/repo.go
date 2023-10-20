@@ -113,8 +113,7 @@ func (e *external) Create(ctx context.Context, mg resource.Managed) error {
 		"Successfully cloned origin repo: %s", spec.FromRepo.Url)
 	err = fromRepo.Branch(branch, true)
 	if err != nil {
-		//return err
-		e.log.Info("Switching on branch", "repoUrl", spec.FromRepo.Url, "branch", branch)
+		errors.Wrapf(err, fmt.Sprint("Switching on branch", "repoUrl", spec.FromRepo.Url, "branch", branch))
 	}
 	e.log.Debug(fmt.Sprintf("Origin repo on branch %s", branch))
 
@@ -124,8 +123,7 @@ func (e *external) Create(ctx context.Context, mg resource.Managed) error {
 	}
 	err = toRepo.Branch(branch, false)
 	if err != nil {
-		//return err
-		e.log.Info("Switching on branch", "repoUrl", spec.ToRepo.Url, "branch", branch)
+		errors.Wrapf(err, fmt.Sprint("Switching on branch", "repoUrl", spec.FromRepo.Url, "branch", branch))
 	}
 	e.log.Debug(fmt.Sprintf("Target repo on branch %s", branch))
 

@@ -2,7 +2,10 @@ package git
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
+	"path"
+	"path/filepath"
 	"time"
 
 	"github.com/go-git/go-billy/v5"
@@ -44,11 +47,75 @@ type CloneOptions struct {
 	UnsupportedCapabilities bool
 }
 
+type IndexOptions struct {
+	OriginRepo *Repo
+	FromPath   string
+	ToPath     string
+}
+
+// NewStorage returns a new Storage base on memory initializing also IndexStorage.
+func NewStorage() *memory.Storage {
+	mem := memory.NewStorage()
+	mem.IndexStorage = memory.IndexStorage{}
+	return mem
+}
+
+/*
+The function simulate the application of filemode of each from the origin repo (contained in "IndexOption.FromPath") to the destination repo (to files contained in IndexOption.ToPath)
+
+---- git update-index --chmod
+*/
+func (s *Repo) UpdateIndex(idx *IndexOptions) error {
+	getIndexRelative := func(basepath, targpath string) string {
+		if len(basepath) > 0 && basepath[0] != '/' {
+			basepath = fmt.Sprintf("%c%s", '/', basepath)
+		}
+		if len(targpath) > 0 && targpath[0] != '/' {
+			targpath = fmt.Sprintf("%c%s", '/', targpath)
+		}
+		path, err := filepath.Rel(basepath, targpath)
+		if err != nil {
+			return targpath
+		}
+		if path == "." {
+			return ""
+		}
+		return path
+	}
+
+	fromIdx, err := idx.OriginRepo.storer.IndexStorage.Index()
+	if err != nil {
+		return err
+	}
+	toIdx, err := s.storer.IndexStorage.Index()
+	if err != nil {
+		return err
+	}
+	pattern := path.Join(getIndexRelative("/", idx.ToPath), "*")
+	subInd, err := toIdx.Glob(pattern)
+	if err != nil {
+		return err
+	}
+	for _, e := range subInd {
+		relativeName := getIndexRelative(idx.ToPath, e.Name)
+		relativeSrc := getIndexRelative("/", idx.FromPath)
+
+		/* .Entry() return ErrEntryNotFound if there is no match.
+		The error is ignored because the destination folder can contain element that are not included in the source repo */
+		fromEntry, _ := fromIdx.Entry(path.Join(relativeSrc, relativeName))
+
+		//if Entry doesn't return an element skip to the next without updating
+		if fromEntry != nil {
+			e.Mode = fromEntry.Mode
+		}
+	}
+	return nil
+}
 func Clone(opts CloneOptions) (*Repo, error) {
 	res := &Repo{
 		rawURL: opts.URL,
 		auth:   opts.Auth,
-		storer: memory.NewStorage(),
+		storer: NewStorage(),
 		fs:     memfs.New(),
 	}
 
@@ -138,7 +205,7 @@ func (s *Repo) Branch(name string) error {
 	})
 }
 
-func (s *Repo) Commit(path, msg string) (string, error) {
+func (s *Repo) Commit(path, msg string, opt *IndexOptions) (string, error) {
 	wt, err := s.repo.Worktree()
 	if err != nil {
 		return "", err
@@ -147,6 +214,8 @@ func (s *Repo) Commit(path, msg string) (string, error) {
 	if _, err := wt.Add(path); err != nil {
 		return "", err
 	}
+
+	s.UpdateIndex(opt)
 
 	// git commit -m $message
 	hash, err := wt.Commit(msg, &git.CommitOptions{

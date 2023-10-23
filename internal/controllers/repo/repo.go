@@ -166,7 +166,12 @@ func (e *external) Create(ctx context.Context, mg resource.Managed) error {
 	e.rec.Eventf(cr, corev1.EventTypeNormal, "RepoSyncSuccess",
 		"Origin and target repo synchronized")
 
-	commitId, err := toRepo.Commit(".", "first commit")
+	toPath := helpers.String(spec.ToRepo.Path)
+	commitId, err := toRepo.Commit(".", "first commit", &git.IndexOptions{
+		OriginRepo: fromRepo,
+		FromPath:   fromPath,
+		ToPath:     toPath,
+	})
 	if err != nil {
 		return err
 	}

@@ -118,8 +118,11 @@ func (s *Repo) CurrentBranch() string {
 	return head.Name().Short()
 }
 
-func (s *Repo) Branch(name string) error {
+func (s *Repo) Branch(name string, isRemote bool) error {
 	ref := plumbing.NewBranchReferenceName(name)
+	if isRemote {
+		ref = plumbing.NewRemoteReferenceName("origin", name)
+	}
 
 	h := plumbing.NewSymbolicReference(plumbing.HEAD, ref)
 	err := s.repo.Storer.SetReference(h)

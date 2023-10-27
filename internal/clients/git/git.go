@@ -276,7 +276,7 @@ func (s *Repo) Push(downstream, branch string, insecure bool) error {
 
 	return s.repo.Push(&git.PushOptions{
 		RemoteName:      downstream,
-		Force:           true,
+		Force:           false,
 		Auth:            s.auth,
 		InsecureSkipTLS: insecure,
 		RefSpecs: []config.RefSpec{

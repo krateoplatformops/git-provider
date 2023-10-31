@@ -113,7 +113,7 @@ func (e *external) Create(ctx context.Context, mg resource.Managed) error {
 		"Successfully cloned origin repo: %s", spec.FromRepo.Url)
 	err = fromRepo.Branch(branch, true)
 	if err != nil {
-		return errors.Wrapf(err, fmt.Sprint("Switching on branch", "repoUrl", spec.FromRepo.Url, "branch", branch))
+		return errors.Wrapf(err, fmt.Sprint("Switching on branch ", "repoUrl ", spec.FromRepo.Url, " branch ", branch))
 	}
 	e.log.Debug(fmt.Sprintf("Origin repo on branch %s", branch))
 
@@ -121,9 +121,13 @@ func (e *external) Create(ctx context.Context, mg resource.Managed) error {
 	if spec.ToRepo.Branch != nil {
 		branch = helpers.String(spec.ToRepo.Branch)
 	}
-	err = toRepo.Branch(branch, false)
+	isRemote := false
+	if branch != "main" {
+		isRemote = true
+	}
+	err = toRepo.Branch(branch, isRemote)
 	if err != nil {
-		return errors.Wrapf(err, fmt.Sprint("Switching on branch", "repoUrl", spec.FromRepo.Url, "branch", branch))
+		return errors.Wrapf(err, fmt.Sprint("Switching on branch ", "repoUrl ", spec.FromRepo.Url, " branch ", branch))
 	}
 	e.log.Debug(fmt.Sprintf("Target repo on branch %s", branch))
 
@@ -181,7 +185,20 @@ func (e *external) Create(ctx context.Context, mg resource.Managed) error {
 		FromPath:   fromPath,
 		ToPath:     toPath,
 	})
-	if err != nil {
+	if err == git.NoErrAlreadyUpToDate {
+		commitId, err := toRepo.GetLatestCommit(branch, isRemote)
+		if err != nil {
+			return err
+		}
+		e.log.Debug("Target repo not commited", "branch", branch, "status", "repository already up-to-date")
+		e.rec.Eventf(cr, corev1.EventTypeNormal, "RepoAlreadyUpToDate",
+			fmt.Sprintf("Target repo already up-to-date on branch %s", branch))
+		meta.SetExternalName(cr, commitId)
+
+		cr.Status.CommitId = helpers.StringPtr(commitId)
+		cr.Status.Branch = helpers.StringPtr(branch)
+		return e.kube.Status().Update(ctx, cr)
+	} else if err != nil {
 		return err
 	}
 	e.log.Debug("Target repo committed", "branch", branch, "commitId", commitId)

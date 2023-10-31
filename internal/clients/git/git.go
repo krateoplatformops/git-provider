@@ -29,6 +29,7 @@ var (
 	ErrEmptyRemoteRepository  = errors.New("remote repository is empty")
 	ErrAuthenticationRequired = errors.New("authentication required")
 	ErrAuthorizationFailed    = errors.New("authorization failed")
+	NoErrAlreadyUpToDate      = git.NoErrAlreadyUpToDate
 )
 
 // Repo is an in-memory git repository
@@ -191,8 +192,21 @@ func (s *Repo) Branch(name string, isRemote bool) error {
 		ref = plumbing.NewRemoteReferenceName("origin", name)
 	}
 
+	_, err := s.repo.Reference(ref, true)
+	if err != nil {
+		ref = plumbing.NewBranchReferenceName(name)
+		wt, err := s.repo.Worktree()
+		if err != nil {
+			return err
+		}
+		return wt.Checkout(&git.CheckoutOptions{
+			Create: true,
+			Branch: ref,
+		})
+	}
+
 	h := plumbing.NewSymbolicReference(plumbing.HEAD, ref)
-	err := s.repo.Storer.SetReference(h)
+	err = s.repo.Storer.SetReference(h)
 	if err != nil {
 		return err
 	}
@@ -218,7 +232,19 @@ func (s *Repo) Commit(path, msg string, opt *IndexOptions) (string, error) {
 		return "", err
 	}
 
-	s.UpdateIndex(opt)
+	err = s.UpdateIndex(opt)
+	if err != nil {
+		return "", err
+	}
+
+	fStatus, err := wt.Status()
+	if err != nil {
+		return "", err
+	}
+
+	if fStatus.IsClean() {
+		return "", NoErrAlreadyUpToDate
+	}
 
 	// git commit -m $message
 	hash, err := wt.Commit(msg, &git.CommitOptions{
@@ -229,7 +255,7 @@ func (s *Repo) Commit(path, msg string, opt *IndexOptions) (string, error) {
 		},
 	})
 	if err != nil {
-		return "", err
+		return "", NoErrAlreadyUpToDate
 	}
 
 	return hash.String(), nil
@@ -305,4 +331,13 @@ func Pull(s *Repo, insecure bool) error {
 	}
 
 	return err
+}
+
+func (s *Repo) GetLatestCommit(branch string, isRemote bool) (string, error) {
+	refName := plumbing.NewBranchReferenceName(branch)
+	if isRemote {
+		refName = plumbing.NewRemoteReferenceName("origin", branch)
+	}
+	ref, err := s.repo.Reference(refName, true)
+	return ref.Hash().String(), err
 }

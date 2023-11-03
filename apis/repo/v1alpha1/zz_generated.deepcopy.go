@@ -157,8 +157,13 @@ func (in *RepoSpec) DeepCopy() *RepoSpec {
 func (in *RepoStatus) DeepCopyInto(out *RepoStatus) {
 	*out = *in
 	in.ManagedStatus.DeepCopyInto(&out.ManagedStatus)
-	if in.CommitId != nil {
-		in, out := &in.CommitId, &out.CommitId
+	if in.OriginCommitId != nil {
+		in, out := &in.OriginCommitId, &out.OriginCommitId
+		*out = new(string)
+		**out = **in
+	}
+	if in.TargetCommitId != nil {
+		in, out := &in.TargetCommitId, &out.TargetCommitId
 		*out = new(string)
 		**out = **in
 	}

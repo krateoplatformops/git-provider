@@ -59,8 +59,11 @@ type RepoSpec struct {
 type RepoStatus struct {
 	commonv1.ManagedStatus `json:",inline"`
 
-	// CommitId: last commit identifier
-	CommitId *string `json:"commitId,omitempty"`
+	// OriginCommitId: last commit identifier of the origin repo
+	OriginCommitId *string `json:"originCommitId,omitempty"`
+
+	// TargetCommitId: last commit identifier of the target repo
+	TargetCommitId *string `json:"targetCommitId,omitempty"`
 
 	// Branch: branch where commit was done
 	Branch *string `json:"branch,omitempty"`
@@ -69,8 +72,8 @@ type RepoStatus struct {
 // +kubebuilder:object:root=true
 
 // A Repo is a managed resource that represents a Krateo Git Repository
-// +kubebuilder:printcolumn:name="COMMIT_ID",type="string",JSONPath=".status.commitId"
-// +kubebuilder:printcolumn:name="BRANCH",type="string",JSONPath=".status.branch"
+// +kubebuilder:printcolumn:name="TARGET_COMMIT_ID",type="string",JSONPath=".status.targetCommitId"
+// +kubebuilder:printcolumn:name="TARGET_BRANCH",type="string",JSONPath=".status.branch"
 // +kubebuilder:printcolumn:name="READY",type="string",JSONPath=".status.conditions[?(@.type=='Ready')].status"
 // +kubebuilder:printcolumn:name="SYNCED",type="string",JSONPath=".status.conditions[?(@.type=='Synced')].status",priority=10
 // +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"

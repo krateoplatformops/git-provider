@@ -17,6 +17,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/krateoplatformops/provider-runtime/pkg/helpers"
 )
 
 const (
@@ -48,6 +49,13 @@ type CloneOptions struct {
 	UnsupportedCapabilities bool
 }
 
+type ListOptions struct {
+	URL      string
+	Auth     transport.AuthMethod
+	Insecure bool
+	Branch   string
+}
+
 type IndexOptions struct {
 	OriginRepo *Repo
 	FromPath   string
@@ -61,9 +69,45 @@ func NewStorage() *memory.Storage {
 	return mem
 }
 
+func GetLatestCommitRemote(opts ListOptions) (*string, error) {
+	res := &Repo{
+		rawURL: opts.URL,
+		auth:   opts.Auth,
+		storer: memory.NewStorage(),
+		fs:     memfs.New(),
+	}
+
+	var err error
+	res.repo, err = git.Init(res.storer, res.fs)
+	if err != nil {
+		return nil, err
+	}
+	remote, err := res.repo.CreateRemote(&config.RemoteConfig{
+		URLs: []string{opts.URL},
+		Name: "origin",
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	refs, err := remote.List(&git.ListOptions{
+		Auth:            opts.Auth,
+		InsecureSkipTLS: opts.Insecure,
+	})
+	if err != nil {
+		return nil, err
+	}
+	repoRef := plumbing.NewBranchReferenceName(opts.Branch)
+	for _, ref := range refs {
+		if ref.Name() == repoRef {
+			return helpers.StringPtr(ref.Hash().String()), nil
+		}
+	}
+	return nil, fmt.Errorf(fmt.Sprintf("Branch %s reference %s not found on remote %s", opts.Branch, repoRef, opts.URL))
+}
+
 /*
 The function simulate the application of filemode of each from the origin repo (contained in "IndexOption.FromPath") to the destination repo (to files contained in IndexOption.ToPath)
-
 ---- git update-index --chmod
 */
 func (s *Repo) UpdateIndex(idx *IndexOptions) error {
@@ -191,7 +235,6 @@ func (s *Repo) Branch(name string, isRemote bool) error {
 	if isRemote {
 		ref = plumbing.NewRemoteReferenceName("origin", name)
 	}
-
 	_, err := s.repo.Reference(ref, true)
 	if err != nil {
 		ref = plumbing.NewBranchReferenceName(name)

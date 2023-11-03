@@ -118,6 +118,10 @@ func (e *external) Delete(ctx context.Context, mg resource.Managed) error {
 	if !ok {
 		return errors.New(errNotRepo)
 	}
+	if !meta.IsActionAllowed(cr, meta.ActionDelete) {
+		e.log.Debug("External resource should not be deleted by provider, skip deleting.")
+		return nil
+	}
 
 	cr.Status.SetConditions(commonv1.Deleting())
 

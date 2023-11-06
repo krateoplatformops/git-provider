@@ -19,11 +19,11 @@ spec:
   scope: Cluster
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .status.commitId
-      name: COMMIT_ID
+    - jsonPath: .status.targetCommitId
+      name: TARGET_COMMIT_ID
       type: string
     - jsonPath: .status.branch
-      name: BRANCH
+      name: TARGET_BRANCH
       type: string
     - jsonPath: .status.conditions[?(@.type=='Ready')].status
       name: READY
@@ -179,9 +179,6 @@ spec:
               branch:
                 description: 'Branch: branch where commit was done'
                 type: string
-              commitId:
-                description: 'CommitId: last commit identifier'
-                type: string
               conditions:
                 description: Conditions of the resource.
                 items:
@@ -215,6 +212,14 @@ spec:
                   - type
                   type: object
                 type: array
+              originCommitId:
+                description: 'OriginCommitId: last commit identifier of the origin
+                  repo'
+                type: string
+              targetCommitId:
+                description: 'TargetCommitId: last commit identifier of the target
+                  repo'
+                type: string
             type: object
         required:
         - spec

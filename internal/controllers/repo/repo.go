@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 
 	"github.com/cbroglie/mustache"
+	"github.com/go-git/go-billy/v5"
 	"github.com/pkg/errors"
 
 	commonv1 "github.com/krateoplatformops/provider-runtime/apis/common/v1"
@@ -51,8 +53,8 @@ func (e *external) Observe(ctx context.Context, mg resource.Managed) (reconciler
 		return reconciler.ExternalObservation{}, errors.New(errNotRepo)
 	}
 
-	if cr.Status.CommitId != nil {
-		meta.SetExternalName(cr, helpers.String(cr.Status.CommitId))
+	if cr.Status.TargetCommitId != nil {
+		meta.SetExternalName(cr, helpers.String(cr.Status.TargetCommitId))
 	}
 
 	if meta.GetExternalName(cr) == "" {
@@ -61,8 +63,23 @@ func (e *external) Observe(ctx context.Context, mg resource.Managed) (reconciler
 			ResourceUpToDate: true,
 		}, nil
 	}
+	latestCommit, err := git.GetLatestCommitRemote(git.ListOptions{
+		URL:      cr.Spec.FromRepo.Url,
+		Auth:     e.cfg.FromRepoCreds,
+		Insecure: e.cfg.Insecure,
+		Branch:   *cr.Spec.FromRepo.Branch,
+	})
+	if err != nil {
+		return reconciler.ExternalObservation{}, err
+	}
 
-	//cr.Status.CommitId = helpers.StringPtr(meta.GetExternalName(cr))
+	if helpers.String(latestCommit) != helpers.String(cr.Status.OriginCommitId) {
+		return reconciler.ExternalObservation{
+			ResourceExists:   true,
+			ResourceUpToDate: false,
+		}, nil
+	}
+
 	cr.Status.SetConditions(commonv1.Available())
 
 	return reconciler.ExternalObservation{
@@ -76,8 +93,63 @@ func (e *external) Create(ctx context.Context, mg resource.Managed) error {
 	if !ok {
 		return errors.New(errNotRepo)
 	}
-
+	if !meta.IsActionAllowed(cr, meta.ActionCreate) {
+		e.log.Debug("External resource should not be created by provider, skip creating.")
+		return nil
+	}
 	cr.Status.SetConditions(commonv1.Creating())
+	return e.SyncRepos(ctx, cr, "first commit")
+}
+
+func (e *external) Update(ctx context.Context, mg resource.Managed) error {
+	cr, ok := mg.(*repov1alpha1.Repo)
+	if !ok {
+		return errors.New(errNotRepo)
+	}
+	if !meta.IsActionAllowed(cr, meta.ActionUpdate) {
+		e.log.Debug("External resource should not be updated by provider, skip updating.")
+		return nil
+	}
+	return e.SyncRepos(ctx, cr, "updated target repo with origin repo")
+}
+
+func (e *external) Delete(ctx context.Context, mg resource.Managed) error {
+	cr, ok := mg.(*repov1alpha1.Repo)
+	if !ok {
+		return errors.New(errNotRepo)
+	}
+	if !meta.IsActionAllowed(cr, meta.ActionDelete) {
+		e.log.Debug("External resource should not be deleted by provider, skip deleting.")
+		return nil
+	}
+
+	cr.Status.SetConditions(commonv1.Deleting())
+
+	return nil // noop
+}
+
+func (e *external) loadValuesFromConfigMap(ctx context.Context, ref *commonv1.ConfigMapKeySelector) (map[string]interface{}, error) {
+	var res map[string]interface{}
+
+	js, err := resource.GetConfigMapValue(ctx, e.kube, ref)
+	if err != nil {
+		e.log.Debug(err.Error(), "name", ref.Name, "key", ref.Key, "namespace", ref.Namespace)
+		return nil, err
+	}
+
+	js = strings.TrimPrefix(js, "'")
+	js = strings.TrimSuffix(js, "'")
+
+	err = json.Unmarshal([]byte(js), &res)
+	if err != nil {
+		e.log.Debug(err.Error(), "json", js)
+		return nil, err
+	}
+
+	return res, nil
+}
+
+func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitMessage string) error {
 
 	spec := cr.Spec.DeepCopy()
 
@@ -96,8 +168,12 @@ func (e *external) Create(ctx context.Context, mg resource.Managed) error {
 		"Successfully cloned target repo: %s", spec.ToRepo.Url)
 
 	branch := "main"
-	if spec.FromRepo.Branch != nil {
+	if spec.ToRepo.Branch != nil {
 		branch = helpers.String(spec.FromRepo.Branch)
+	}
+	isRemote := false
+	if branch != "main" {
+		isRemote = true
 	}
 	fromRepo, err := git.Clone(git.CloneOptions{
 		URL:                     spec.FromRepo.Url,
@@ -117,11 +193,16 @@ func (e *external) Create(ctx context.Context, mg resource.Managed) error {
 	}
 	e.log.Debug(fmt.Sprintf("Origin repo on branch %s", branch))
 
+	fromRepoCommitId, err := fromRepo.GetLatestCommit(branch, isRemote)
+	if err != nil {
+		return err
+	}
+
 	branch = "main"
 	if spec.ToRepo.Branch != nil {
 		branch = helpers.String(spec.ToRepo.Branch)
 	}
-	isRemote := false
+	isRemote = false
 	if branch != "main" {
 		isRemote = true
 	}
@@ -153,6 +234,11 @@ func (e *external) Create(ctx context.Context, mg resource.Managed) error {
 			"values", values,
 		)
 
+		err = loadIgnoreTargetFiles(co)
+		if err != nil {
+			return err
+		}
+
 		if err := loadIgnoreFileEventually(co); err != nil {
 			e.log.Info("Unable to load '.krateoignore'", "msg", err.Error())
 			e.rec.Eventf(cr, corev1.EventTypeWarning, "CannotLoadIgnoreFile",
@@ -180,7 +266,7 @@ func (e *external) Create(ctx context.Context, mg resource.Managed) error {
 		"Origin and target repo synchronized")
 
 	toPath := helpers.String(spec.ToRepo.Path)
-	commitId, err := toRepo.Commit(".", "first commit", &git.IndexOptions{
+	commitId, err := toRepo.Commit(".", commitMessage, &git.IndexOptions{
 		OriginRepo: fromRepo,
 		FromPath:   fromPath,
 		ToPath:     toPath,
@@ -195,7 +281,8 @@ func (e *external) Create(ctx context.Context, mg resource.Managed) error {
 			fmt.Sprintf("Target repo already up-to-date on branch %s", branch))
 		meta.SetExternalName(cr, commitId)
 
-		cr.Status.CommitId = helpers.StringPtr(commitId)
+		cr.Status.OriginCommitId = helpers.StringPtr(fromRepoCommitId)
+		cr.Status.TargetCommitId = helpers.StringPtr(commitId)
 		cr.Status.Branch = helpers.StringPtr(branch)
 		return e.kube.Status().Update(ctx, cr)
 	} else if err != nil {
@@ -215,47 +302,12 @@ func (e *external) Create(ctx context.Context, mg resource.Managed) error {
 
 	meta.SetExternalName(cr, commitId)
 
-	cr.Status.CommitId = helpers.StringPtr(commitId)
+	cr.Status.OriginCommitId = helpers.StringPtr(fromRepoCommitId)
+	cr.Status.TargetCommitId = helpers.StringPtr(commitId)
 	cr.Status.Branch = helpers.StringPtr(branch)
 	//cr.Status.SetConditions(commonv1.Available())
 
 	return e.kube.Status().Update(ctx, cr)
-}
-
-func (e *external) Update(ctx context.Context, mg resource.Managed) error {
-	return nil // noop
-}
-
-func (e *external) Delete(ctx context.Context, mg resource.Managed) error {
-	cr, ok := mg.(*repov1alpha1.Repo)
-	if !ok {
-		return errors.New(errNotRepo)
-	}
-
-	cr.Status.SetConditions(commonv1.Deleting())
-
-	return nil // noop
-}
-
-func (e *external) loadValuesFromConfigMap(ctx context.Context, ref *commonv1.ConfigMapKeySelector) (map[string]interface{}, error) {
-	var res map[string]interface{}
-
-	js, err := resource.GetConfigMapValue(ctx, e.kube, ref)
-	if err != nil {
-		e.log.Debug(err.Error(), "name", ref.Name, "key", ref.Key, "namespace", ref.Namespace)
-		return nil, err
-	}
-
-	js = strings.TrimPrefix(js, "'")
-	js = strings.TrimSuffix(js, "'")
-
-	err = json.Unmarshal([]byte(js), &res)
-	if err != nil {
-		e.log.Debug(err.Error(), "json", js)
-		return nil, err
-	}
-
-	return res, nil
 }
 
 func createRenderFunc(co *copier, values interface{}) {
@@ -287,7 +339,39 @@ func loadIgnoreFileEventually(co *copier) error {
 
 	lines := strings.Split(string(bs), "\n")
 
-	co.ignore = gi.CompileIgnoreLines(lines...)
+	co.krateoIgnore = gi.CompileIgnoreLines(lines...)
 
+	return nil
+}
+
+func loadFilesIntoArray(fs billy.Filesystem, dir string, flist *[]string) error {
+	files, err := fs.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+
+	for _, file := range files {
+		if file.IsDir() {
+			err := loadFilesIntoArray(fs, filepath.Join(dir, file.Name()), flist)
+			if err != nil {
+				return err
+			}
+		} else {
+			absPath := filepath.Join(dir, file.Name())
+			*flist = append(*flist, absPath)
+		}
+	}
+
+	return nil
+}
+
+func loadIgnoreTargetFiles(co *copier) error {
+	fs := co.toRepo.FS()
+	var flist []string
+	err := loadFilesIntoArray(fs, ".", &flist)
+	if err != nil {
+		return err
+	}
+	co.targetIgnore = gi.CompileIgnoreLines(flist...)
 	return nil
 }

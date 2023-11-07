@@ -106,10 +106,16 @@ func (e *external) Update(ctx context.Context, mg resource.Managed) error {
 	if !ok {
 		return errors.New(errNotRepo)
 	}
+
+	if !helpers.Bool(cr.Spec.EnableUpdate) {
+		e.log.Debug("External resource should not be updated by provider, skip updating.")
+		return nil
+	}
 	if !meta.IsActionAllowed(cr, meta.ActionUpdate) {
 		e.log.Debug("External resource should not be updated by provider, skip updating.")
 		return nil
 	}
+	cr.Status.SetConditions(commonv1.Creating())
 	return e.SyncRepos(ctx, cr, "updated target repo with origin repo")
 }
 
@@ -158,28 +164,22 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 		Auth:                    e.cfg.ToRepoCreds,
 		Insecure:                e.cfg.Insecure,
 		UnsupportedCapabilities: e.cfg.UnsupportedCapabilities,
+		Branch:                  helpers.String(spec.ToRepo.Branch),
 	})
-
 	if err != nil {
 		return errors.Wrapf(err, "cloning toRepo: %s", spec.ToRepo.Url)
 	}
 	e.log.Debug("Target repo cloned", "url", spec.ToRepo.Url)
 	e.rec.Eventf(cr, corev1.EventTypeNormal, "TargetRepoCloned",
 		"Successfully cloned target repo: %s", spec.ToRepo.Url)
+	e.log.Debug(fmt.Sprintf("Target repo on branch %s", toRepo.CurrentBranch()))
 
-	branch := "main"
-	if spec.ToRepo.Branch != nil {
-		branch = helpers.String(spec.FromRepo.Branch)
-	}
-	isRemote := false
-	if branch != "main" {
-		isRemote = true
-	}
 	fromRepo, err := git.Clone(git.CloneOptions{
 		URL:                     spec.FromRepo.Url,
 		Auth:                    e.cfg.FromRepoCreds,
 		Insecure:                e.cfg.Insecure,
 		UnsupportedCapabilities: e.cfg.UnsupportedCapabilities,
+		Branch:                  helpers.String(spec.FromRepo.Branch),
 	})
 	if err != nil {
 		return err
@@ -187,30 +187,14 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 	e.log.Debug("Origin repo cloned", "url", spec.FromRepo.Url)
 	e.rec.Eventf(cr, corev1.EventTypeNormal, "OriginRepoCloned",
 		"Successfully cloned origin repo: %s", spec.FromRepo.Url)
-	err = fromRepo.Branch(branch, true)
-	if err != nil {
-		return errors.Wrapf(err, fmt.Sprint("Switching on branch ", "repoUrl ", spec.FromRepo.Url, " branch ", branch))
-	}
-	e.log.Debug(fmt.Sprintf("Origin repo on branch %s", branch))
+	e.log.Debug(fmt.Sprintf("Origin repo on branch %s", fromRepo.CurrentBranch()))
 
-	fromRepoCommitId, err := fromRepo.GetLatestCommit(branch, isRemote)
+	fromRepoCommitId, err := fromRepo.GetLatestCommit(fromRepo.CurrentBranch())
 	if err != nil {
 		return err
 	}
 
-	branch = "main"
-	if spec.ToRepo.Branch != nil {
-		branch = helpers.String(spec.ToRepo.Branch)
-	}
-	isRemote = false
-	if branch != "main" {
-		isRemote = true
-	}
-	err = toRepo.Branch(branch, isRemote)
-	if err != nil {
-		return errors.Wrapf(err, fmt.Sprint("Switching on branch ", "repoUrl ", spec.FromRepo.Url, " branch ", branch))
-	}
-	e.log.Debug(fmt.Sprintf("Target repo on branch %s", branch))
+	e.log.Debug(fmt.Sprintf("Target repo on branch %s", toRepo.CurrentBranch()))
 
 	co := &copier{
 		fromRepo: fromRepo,
@@ -272,40 +256,42 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 		ToPath:     toPath,
 	})
 	if err == git.NoErrAlreadyUpToDate {
-		commitId, err := toRepo.GetLatestCommit(branch, isRemote)
+		commitId, err := toRepo.GetLatestCommit(toRepo.CurrentBranch())
 		if err != nil {
 			return err
 		}
-		e.log.Debug("Target repo not commited", "branch", branch, "status", "repository already up-to-date")
+		e.log.Debug("Target repo not commited", "branch", toRepo.CurrentBranch(), "status", "repository already up-to-date")
 		e.rec.Eventf(cr, corev1.EventTypeNormal, "RepoAlreadyUpToDate",
-			fmt.Sprintf("Target repo already up-to-date on branch %s", branch))
+			fmt.Sprintf("Target repo already up-to-date on branch %s", toRepo.CurrentBranch()))
 		meta.SetExternalName(cr, commitId)
 
 		cr.Status.OriginCommitId = helpers.StringPtr(fromRepoCommitId)
 		cr.Status.TargetCommitId = helpers.StringPtr(commitId)
-		cr.Status.Branch = helpers.StringPtr(branch)
+		cr.Status.Branch = helpers.StringPtr(toRepo.CurrentBranch())
+		cr.Status.SetConditions(commonv1.ReconcileSuccess())
+
 		return e.kube.Status().Update(ctx, cr)
 	} else if err != nil {
 		return err
 	}
-	e.log.Debug("Target repo committed", "branch", branch, "commitId", commitId)
+	e.log.Debug("Target repo committed", "branch", toRepo.CurrentBranch(), "commitId", commitId)
 	e.rec.Eventf(cr, corev1.EventTypeNormal, "RepoCommitSuccess",
-		fmt.Sprintf("Target repo committed on branch %s", branch))
+		fmt.Sprintf("Target repo committed on branch %s", toRepo.CurrentBranch()))
 
-	err = toRepo.Push("origin", branch, e.cfg.Insecure)
+	err = toRepo.Push("origin", toRepo.CurrentBranch(), e.cfg.Insecure)
 	if err != nil {
 		return err
 	}
-	e.log.Debug("Target repo pushed", "branch", branch, "commitId", commitId)
+	e.log.Debug("Target repo pushed", "branch", toRepo.CurrentBranch(), "commitId", commitId)
 	e.rec.Eventf(cr, corev1.EventTypeNormal, "RepoPushSuccess",
-		fmt.Sprintf("Target repo pushed branch %s", branch))
+		fmt.Sprintf("Target repo pushed branch %s", toRepo.CurrentBranch()))
 
 	meta.SetExternalName(cr, commitId)
 
 	cr.Status.OriginCommitId = helpers.StringPtr(fromRepoCommitId)
 	cr.Status.TargetCommitId = helpers.StringPtr(commitId)
-	cr.Status.Branch = helpers.StringPtr(branch)
-	//cr.Status.SetConditions(commonv1.Available())
+	cr.Status.Branch = helpers.StringPtr(toRepo.CurrentBranch())
+	cr.Status.SetConditions(commonv1.ReconcileSuccess())
 
 	return e.kube.Status().Update(ctx, cr)
 }

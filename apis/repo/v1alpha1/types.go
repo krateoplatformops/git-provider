@@ -53,6 +53,10 @@ type RepoSpec struct {
 	// are included in transport.UnsupportedCapabilities.
 	// +optional
 	UnsupportedCapabilities *bool `json:"unsupportedCapabilities,omitempty"`
+
+	// EnableUpdate (default: false)
+	// +optional
+	EnableUpdate *bool `json:"enableUpdate,omitempty"`
 }
 
 // A RepoStatus represents the observed state of a Repo.
@@ -75,7 +79,7 @@ type RepoStatus struct {
 // +kubebuilder:printcolumn:name="TARGET_COMMIT_ID",type="string",JSONPath=".status.targetCommitId"
 // +kubebuilder:printcolumn:name="TARGET_BRANCH",type="string",JSONPath=".status.branch"
 // +kubebuilder:printcolumn:name="READY",type="string",JSONPath=".status.conditions[?(@.type=='Ready')].status"
-// +kubebuilder:printcolumn:name="SYNCED",type="string",JSONPath=".status.conditions[?(@.type=='Synced')].status",priority=10
+// +kubebuilder:printcolumn:name="SYNCED",type="string",JSONPath=".status.conditions[?(@.type=='Synced')].status"
 // +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster,categories={git,krateo}

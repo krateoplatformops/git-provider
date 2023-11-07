@@ -47,6 +47,7 @@ type CloneOptions struct {
 	Auth                    transport.AuthMethod
 	Insecure                bool
 	UnsupportedCapabilities bool
+	Branch                  string
 }
 
 type ListOptions struct {
@@ -172,12 +173,30 @@ func Clone(opts CloneOptions) (*Repo, error) {
 
 	// Clone the given repository to the given directory
 	var err error
-	res.repo, err = git.Clone(res.storer, res.fs, &git.CloneOptions{
+	cloneOpts := git.CloneOptions{
 		RemoteName:      "origin",
 		URL:             opts.URL,
 		Auth:            opts.Auth,
+		ReferenceName:   plumbing.NewBranchReferenceName(opts.Branch),
+		SingleBranch:    true,
 		InsecureSkipTLS: opts.Insecure,
+	}
+	_, err = GetLatestCommitRemote(ListOptions{
+		URL:      opts.URL,
+		Auth:     opts.Auth,
+		Insecure: opts.Insecure,
+		Branch:   opts.Branch,
 	})
+	if err != nil {
+		cloneOpts = git.CloneOptions{
+			RemoteName:      "origin",
+			URL:             opts.URL,
+			Auth:            opts.Auth,
+			InsecureSkipTLS: opts.Insecure,
+		}
+	}
+
+	res.repo, err = git.Clone(res.storer, res.fs, &cloneOpts)
 	if err != nil {
 		if errors.Is(err, transport.ErrRepositoryNotFound) {
 			return nil, ErrRepositoryNotFound
@@ -194,17 +213,9 @@ func Clone(opts CloneOptions) (*Repo, error) {
 		if errors.Is(err, transport.ErrAuthorizationFailed) {
 			return nil, ErrAuthorizationFailed
 		}
-
 		return nil, err
-		/*
-			h := plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.ReferenceName("refs/heads/main"))
-			err := res.repo.Storer.SetReference(h)
-			if err != nil {
-				return nil, err
-			}
-		*/
 	}
-
+	res.Branch(opts.Branch, false)
 	return res, nil
 }
 
@@ -376,11 +387,11 @@ func Pull(s *Repo, insecure bool) error {
 	return err
 }
 
-func (s *Repo) GetLatestCommit(branch string, isRemote bool) (string, error) {
+func (s *Repo) GetLatestCommit(branch string) (string, error) {
 	refName := plumbing.NewBranchReferenceName(branch)
-	if isRemote {
-		refName = plumbing.NewRemoteReferenceName("origin", branch)
-	}
+	// if isRemote {
+	// 	refName = plumbing.NewRemoteReferenceName("origin", branch)
+	// }
 	ref, err := s.repo.Reference(refName, true)
 	return ref.Hash().String(), err
 }

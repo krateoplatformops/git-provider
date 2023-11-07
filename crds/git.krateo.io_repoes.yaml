@@ -30,7 +30,6 @@ spec:
       type: string
     - jsonPath: .status.conditions[?(@.type=='Synced')].status
       name: SYNCED
-      priority: 10
       type: string
     - jsonPath: .metadata.creationTimestamp
       name: AGE
@@ -81,6 +80,9 @@ spec:
                 - Orphan
                 - Delete
                 type: string
+              enableUpdate:
+                description: 'EnableUpdate (default: false)'
+                type: boolean
               fromRepo:
                 description: 'FromRepo: repo origin to copy from'
                 properties:

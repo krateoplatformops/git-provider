@@ -217,7 +217,7 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 			"values", values,
 		)
 
-		err = loadIgnoreTargetFiles(co)
+		err = loadIgnoreTargetFiles(helpers.String(spec.ToRepo.Path), co)
 		if err != nil {
 			return err
 		}
@@ -349,10 +349,10 @@ func loadFilesIntoArray(fs billy.Filesystem, dir string, flist *[]string) error 
 	return nil
 }
 
-func loadIgnoreTargetFiles(co *copier) error {
+func loadIgnoreTargetFiles(srcPath string, co *copier) error {
 	fs := co.toRepo.FS()
 	var flist []string
-	err := loadFilesIntoArray(fs, ".", &flist)
+	err := loadFilesIntoArray(fs, srcPath, &flist)
 	if err != nil {
 		return err
 	}

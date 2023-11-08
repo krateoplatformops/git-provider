@@ -35,11 +35,12 @@ var (
 
 // Repo is an in-memory git repository
 type Repo struct {
-	rawURL string
-	auth   transport.AuthMethod
-	storer *memory.Storage
-	fs     billy.Filesystem
-	repo   *git.Repository
+	rawURL      string
+	auth        transport.AuthMethod
+	storer      *memory.Storage
+	fs          billy.Filesystem
+	repo        *git.Repository
+	isNewBranch *bool
 }
 
 type CloneOptions struct {
@@ -47,6 +48,8 @@ type CloneOptions struct {
 	Auth                    transport.AuthMethod
 	Insecure                bool
 	UnsupportedCapabilities bool
+	Branch                  string
+	AlternativeBranch       *string
 }
 
 type ListOptions struct {
@@ -172,12 +175,37 @@ func Clone(opts CloneOptions) (*Repo, error) {
 
 	// Clone the given repository to the given directory
 	var err error
-	res.repo, err = git.Clone(res.storer, res.fs, &git.CloneOptions{
+	cloneOpts := git.CloneOptions{
 		RemoteName:      "origin",
 		URL:             opts.URL,
 		Auth:            opts.Auth,
+		ReferenceName:   plumbing.NewBranchReferenceName(opts.Branch),
+		SingleBranch:    true,
 		InsecureSkipTLS: opts.Insecure,
+	}
+	isOrphan := true
+	_, err = GetLatestCommitRemote(ListOptions{
+		URL:      opts.URL,
+		Auth:     opts.Auth,
+		Insecure: opts.Insecure,
+		Branch:   opts.Branch,
 	})
+	if err != nil {
+		cloneOpts = git.CloneOptions{
+			RemoteName:      "origin",
+			URL:             opts.URL,
+			Auth:            opts.Auth,
+			InsecureSkipTLS: opts.Insecure,
+		}
+		if opts.AlternativeBranch != nil {
+			isOrphan = false
+			cloneOpts.ReferenceName = plumbing.NewBranchReferenceName(helpers.String(opts.AlternativeBranch))
+			cloneOpts.SingleBranch = true
+		}
+		res.isNewBranch = helpers.BoolPtr(true)
+	}
+
+	res.repo, err = git.Clone(res.storer, res.fs, &cloneOpts)
 	if err != nil {
 		if errors.Is(err, transport.ErrRepositoryNotFound) {
 			return nil, ErrRepositoryNotFound
@@ -194,18 +222,14 @@ func Clone(opts CloneOptions) (*Repo, error) {
 		if errors.Is(err, transport.ErrAuthorizationFailed) {
 			return nil, ErrAuthorizationFailed
 		}
-
 		return nil, err
-		/*
-			h := plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.ReferenceName("refs/heads/main"))
-			err := res.repo.Storer.SetReference(h)
-			if err != nil {
-				return nil, err
-			}
-		*/
 	}
 
-	return res, nil
+	err = res.Branch(opts.Branch, &CreateOpt{
+		Create: helpers.Bool(res.isNewBranch),
+		Orphan: isOrphan,
+	})
+	return res, err
 }
 
 func (s *Repo) Exists(path string) (bool, error) {
@@ -226,22 +250,42 @@ func (s *Repo) FS() billy.Filesystem {
 }
 
 func (s *Repo) CurrentBranch() string {
-	head, _ := s.repo.Head()
-	return head.Name().Short()
+	//head, _ := s.repo.Head()
+	head, _ := s.repo.Reference(plumbing.HEAD, false)
+
+	return head.Target().Short()
 }
 
-func (s *Repo) Branch(name string, isRemote bool) error {
+type CreateOpt struct {
+	Create bool
+	Orphan bool
+}
+
+/*
+Switch braches or create according to parameters passed in createOpt.
+  - if createOpt is `nil` no branch are created and a `git checkout` is performed on branch specified by name
+  - if creteOpt is different from nil and createOpt.Create is true a new branch is created checking out from the branch specified during clone - `git checkout -b branch-name`
+  - if creteOpt is different from nil and both createOpt.Create and createOpt.Orphan are true a new branch is created from blank with no history or parents - `git switch --orphan branch-name`
+*/
+func (s *Repo) Branch(name string, createOpt *CreateOpt) error {
 	ref := plumbing.NewBranchReferenceName(name)
-	if isRemote {
-		ref = plumbing.NewRemoteReferenceName("origin", name)
-	}
-	_, err := s.repo.Reference(ref, true)
-	if err != nil {
+	if createOpt != nil && createOpt.Create {
 		ref = plumbing.NewBranchReferenceName(name)
 		wt, err := s.repo.Worktree()
 		if err != nil {
 			return err
 		}
+		if createOpt.Orphan {
+			if err := s.repo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, ref)); err != nil {
+				return err
+			}
+			// Remove all files in the worktree
+			if err := wt.RemoveGlob("*"); err != nil {
+				return err
+			}
+			return err
+		}
+
 		return wt.Checkout(&git.CheckoutOptions{
 			Create: true,
 			Branch: ref,
@@ -249,7 +293,7 @@ func (s *Repo) Branch(name string, isRemote bool) error {
 	}
 
 	h := plumbing.NewSymbolicReference(plumbing.HEAD, ref)
-	err = s.repo.Storer.SetReference(h)
+	err := s.repo.Storer.SetReference(h)
 	if err != nil {
 		return err
 	}
@@ -285,7 +329,7 @@ func (s *Repo) Commit(path, msg string, opt *IndexOptions) (string, error) {
 		return "", err
 	}
 
-	if fStatus.IsClean() {
+	if fStatus.IsClean() && !helpers.Bool(s.isNewBranch) {
 		return "", NoErrAlreadyUpToDate
 	}
 
@@ -313,7 +357,6 @@ func (s *Repo) Push(downstream, branch string, insecure bool) error {
 			InsecureSkipTLS: insecure,
 		})
 	}
-
 	refName := plumbing.NewBranchReferenceName(branch)
 
 	refs, err := s.repo.References()
@@ -376,11 +419,11 @@ func Pull(s *Repo, insecure bool) error {
 	return err
 }
 
-func (s *Repo) GetLatestCommit(branch string, isRemote bool) (string, error) {
+func (s *Repo) GetLatestCommit(branch string) (string, error) {
 	refName := plumbing.NewBranchReferenceName(branch)
-	if isRemote {
-		refName = plumbing.NewRemoteReferenceName("origin", branch)
-	}
+	// if isRemote {
+	// 	refName = plumbing.NewRemoteReferenceName("origin", branch)
+	// }
 	ref, err := s.repo.Reference(refName, true)
 	return ref.Hash().String(), err
 }

@@ -19,10 +19,16 @@ spec:
   scope: Cluster
   versions:
   - additionalPrinterColumns:
+    - jsonPath: .status.originCommitId
+      name: ORIGIN_COMMIT_ID
+      type: string
+    - jsonPath: .status.originBranch
+      name: ORIGIN_BRANCH
+      type: string
     - jsonPath: .status.targetCommitId
       name: TARGET_COMMIT_ID
       type: string
-    - jsonPath: .status.branch
+    - jsonPath: .status.targetBranch
       name: TARGET_BRANCH
       type: string
     - jsonPath: .status.conditions[?(@.type=='Ready')].status
@@ -30,7 +36,6 @@ spec:
       type: string
     - jsonPath: .status.conditions[?(@.type=='Synced')].status
       name: SYNCED
-      priority: 10
       type: string
     - jsonPath: .metadata.creationTimestamp
       name: AGE
@@ -81,6 +86,10 @@ spec:
                 - Orphan
                 - Delete
                 type: string
+              enableUpdate:
+                description: 'Enable sync with origin repo. Target repo will be reconciled
+                  the changes on origin - experimental (default: false)'
+                type: boolean
               fromRepo:
                 description: 'FromRepo: repo origin to copy from'
                 properties:
@@ -90,6 +99,12 @@ spec:
                     type: string
                   branch:
                     description: 'Branch: in the git repository to copy from (or to).'
+                    type: string
+                  cloneFromBranch:
+                    description: 'CloneFromBranch: used the parent of the new branch.
+                      - If the branch exists, the parameter is ignored. - If the parameter
+                      is not set, the branch is created empty and has no parents (no
+                      history) - `git switch --orphan branch-name`'
                     type: string
                   path:
                     description: 'Path: name of the folder in the git repository to
@@ -134,6 +149,12 @@ spec:
                   branch:
                     description: 'Branch: in the git repository to copy from (or to).'
                     type: string
+                  cloneFromBranch:
+                    description: 'CloneFromBranch: used the parent of the new branch.
+                      - If the branch exists, the parameter is ignored. - If the parameter
+                      is not set, the branch is created empty and has no parents (no
+                      history) - `git switch --orphan branch-name`'
+                    type: string
                   path:
                     description: 'Path: name of the folder in the git repository to
                       copy from (or to).'
@@ -176,9 +197,6 @@ spec:
           status:
             description: A RepoStatus represents the observed state of a Repo.
             properties:
-              branch:
-                description: 'Branch: branch where commit was done'
-                type: string
               conditions:
                 description: Conditions of the resource.
                 items:
@@ -212,9 +230,15 @@ spec:
                   - type
                   type: object
                 type: array
+              originBranch:
+                description: 'OriginBranch: branch where commit was done'
+                type: string
               originCommitId:
                 description: 'OriginCommitId: last commit identifier of the origin
                   repo'
+                type: string
+              targetBranch:
+                description: 'TargetBranch: branch where commit was done'
                 type: string
               targetCommitId:
                 description: 'TargetCommitId: last commit identifier of the target

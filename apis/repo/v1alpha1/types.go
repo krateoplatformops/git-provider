@@ -25,6 +25,14 @@ type RepoOpts struct {
 	// AuthMethod defines the authentication mode. One of 'basic' or 'bearer'
 	// +optional
 	AuthMethod *string `json:"authMethod,omitempty"`
+
+	/*
+		CloneFromBranch: used the parent of the new branch.
+		- If the branch exists, the parameter is ignored.
+		- If the parameter is not set, the branch is created empty and has no parents (no history) - `git switch --orphan branch-name`
+	*/
+	// +optional
+	CloneFromBranch *string `json:"cloneFromBranch,omitempty"`
 }
 
 // A RepoSpec defines the desired state of a Repo.
@@ -54,7 +62,7 @@ type RepoSpec struct {
 	// +optional
 	UnsupportedCapabilities *bool `json:"unsupportedCapabilities,omitempty"`
 
-	// EnableUpdate (default: false)
+	// Enable sync with origin repo. Target repo will be reconciled the changes on origin - experimental (default: false)
 	// +optional
 	EnableUpdate *bool `json:"enableUpdate,omitempty"`
 }
@@ -69,15 +77,20 @@ type RepoStatus struct {
 	// TargetCommitId: last commit identifier of the target repo
 	TargetCommitId *string `json:"targetCommitId,omitempty"`
 
-	// Branch: branch where commit was done
-	Branch *string `json:"branch,omitempty"`
+	// TargetBranch: branch where commit was done
+	TargetBranch *string `json:"targetBranch,omitempty"`
+
+	// OriginBranch: branch where commit was done
+	OriginBranch *string `json:"originBranch,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
 // A Repo is a managed resource that represents a Krateo Git Repository
+// +kubebuilder:printcolumn:name="ORIGIN_COMMIT_ID",type="string",JSONPath=".status.originCommitId"
+// +kubebuilder:printcolumn:name="ORIGIN_BRANCH",type="string",JSONPath=".status.originBranch"
 // +kubebuilder:printcolumn:name="TARGET_COMMIT_ID",type="string",JSONPath=".status.targetCommitId"
-// +kubebuilder:printcolumn:name="TARGET_BRANCH",type="string",JSONPath=".status.branch"
+// +kubebuilder:printcolumn:name="TARGET_BRANCH",type="string",JSONPath=".status.targetBranch"
 // +kubebuilder:printcolumn:name="READY",type="string",JSONPath=".status.conditions[?(@.type=='Ready')].status"
 // +kubebuilder:printcolumn:name="SYNCED",type="string",JSONPath=".status.conditions[?(@.type=='Synced')].status"
 // +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"

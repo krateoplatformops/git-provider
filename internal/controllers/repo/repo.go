@@ -198,6 +198,7 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 	co := &copier{
 		fromRepo: fromRepo,
 		toRepo:   toRepo,
+		copyPath: helpers.String(spec.ToRepo.Path),
 	}
 
 	// If fromPath is not specified DON'T COPY!

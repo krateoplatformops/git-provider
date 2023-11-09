@@ -14,6 +14,7 @@ import (
 type copier struct {
 	fromRepo     *git.Repo
 	toRepo       *git.Repo
+	copyPath     string
 	renderFunc   func(in io.Reader, out io.Writer) error
 	krateoIgnore *gi.GitIgnore
 	targetIgnore *gi.GitIgnore
@@ -105,7 +106,7 @@ func (co *copier) copyDir(src, dst string) (err error) {
 				}
 			}
 			if co.targetIgnore != nil {
-				if co.targetIgnore.MatchesPath(srcPath) {
+				if co.targetIgnore.MatchesPath(filepath.Join(co.copyPath, srcPath)) {
 					doNotCopy = true
 				}
 			}

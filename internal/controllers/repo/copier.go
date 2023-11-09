@@ -12,12 +12,13 @@ import (
 )
 
 type copier struct {
-	fromRepo     *git.Repo
-	toRepo       *git.Repo
-	copyPath     string
-	renderFunc   func(in io.Reader, out io.Writer) error
-	krateoIgnore *gi.GitIgnore
-	targetIgnore *gi.GitIgnore
+	fromRepo       *git.Repo
+	toRepo         *git.Repo
+	originCopyPath string
+	targetCopyPath string
+	renderFunc     func(in io.Reader, out io.Writer) error
+	krateoIgnore   *gi.GitIgnore
+	targetIgnore   *gi.GitIgnore
 }
 
 func (co *copier) copyFile(src, dst string, doNotRender bool) (err error) {
@@ -106,7 +107,11 @@ func (co *copier) copyDir(src, dst string) (err error) {
 				}
 			}
 			if co.targetIgnore != nil {
-				if co.targetIgnore.MatchesPath(filepath.Join(co.copyPath, srcPath)) {
+				relSrc, err := filepath.Rel(co.originCopyPath, srcPath)
+				if err != nil {
+					return err
+				}
+				if co.targetIgnore.MatchesPath(filepath.Join(co.targetCopyPath, relSrc)) {
 					doNotCopy = true
 				}
 			}

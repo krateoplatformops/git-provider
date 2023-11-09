@@ -16,8 +16,8 @@ type RepoOpts struct {
 	Path *string `json:"path,omitempty"`
 
 	// Branch: in the git repository to copy from (or to).
-	// +optional
-	Branch *string `json:"branch,omitempty"`
+	// +required
+	Branch *string `json:"branch"`
 
 	// SecretRef: holds credentials required to git server authentication.
 	SecretRef *commonv1.SecretKeySelector `json:"secretRef"`

@@ -132,6 +132,7 @@ spec:
                     description: 'Url: the repository URL.'
                     type: string
                 required:
+                - branch
                 - secretRef
                 - url
                 type: object
@@ -181,6 +182,7 @@ spec:
                     description: 'Url: the repository URL.'
                     type: string
                 required:
+                - branch
                 - secretRef
                 - url
                 type: object

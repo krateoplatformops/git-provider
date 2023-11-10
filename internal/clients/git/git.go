@@ -421,9 +421,9 @@ func Pull(s *Repo, insecure bool) error {
 
 func (s *Repo) GetLatestCommit(branch string) (string, error) {
 	refName := plumbing.NewBranchReferenceName(branch)
-	// if isRemote {
-	// 	refName = plumbing.NewRemoteReferenceName("origin", branch)
-	// }
 	ref, err := s.repo.Reference(refName, true)
-	return ref.Hash().String(), err
+	if err != nil {
+		return "", err
+	}
+	return ref.Hash().String(), nil
 }

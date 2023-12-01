@@ -1,24 +1,38 @@
 apiVersion: git.krateo.io/v1alpha1
 kind: Repo
 metadata:
-  name: git-provider-demo
+  name: git-user
 spec:
-  fromRepo:
-    url: https://github.com/krateoplatformops/renomy-app-template
-    path: skeleton
-    authMethod: basic
-    secretRef:
-      namespace: default
-      name: github.com-secret
-      key: token
-  toRepo:
-    url: https://github.com/krateoplatformops/del-1
-    authMethod: basic
-    secretRef:
-      namespace: default
-      name: github.com-secret
-      key: token
   configMapKeyRef:
-    name: renomy-app-values
+    key: values
+    name: test-push-cm
     namespace: default
-    key: json
+  deletionPolicy: Orphan
+  fromRepo:
+    authMethod: generic
+    branch: main
+    path: /
+    usernameRef:
+      key: username
+      name: github-username
+      namespace: default
+    secretRef:
+      key: token
+      name: github-auth
+      namespace: default
+    url: https://github.com/matteogastaldello/fromRepo
+  toRepo:
+    authMethod: generic
+    branch: main
+    cloneFromBranch: main
+    path: /
+    secretRef:
+      key: token
+      name: github-auth
+      namespace: default
+    usernameRef:
+      key: username
+      name: github-username
+      namespace: default
+    url: https://github.com/matteogastaldello/toRepo
+  unsupportedCapabilities: true

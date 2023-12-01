@@ -103,6 +103,11 @@ func (in *RepoOpts) DeepCopyInto(out *RepoOpts) {
 		*out = new(v1.SecretKeySelector)
 		**out = **in
 	}
+	if in.UsernameRef != nil {
+		in, out := &in.UsernameRef, &out.UsernameRef
+		*out = new(v1.SecretKeySelector)
+		**out = **in
+	}
 	if in.AuthMethod != nil {
 		in, out := &in.AuthMethod, &out.AuthMethod
 		*out = new(string)

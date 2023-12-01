@@ -117,8 +117,16 @@ func getRepoCredentials(ctx context.Context, k client.Client, opts repov1alpha1.
 		}, nil
 	}
 
+	username := "krateoctl"
+	if opts.UsernameRef != nil {
+		username, err = resource.GetSecret(ctx, k, opts.UsernameRef)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return &http.BasicAuth{
-		Username: "krateoctl",
+		Username: username,
 		Password: token,
 	}, nil
 }

@@ -111,8 +111,7 @@ spec:
                       copy from (or to).'
                     type: string
                   secretRef:
-                    description: 'SecretRef: holds credentials required to git server
-                      authentication.'
+                    description: 'SecretRef: holds token required to git server authentication.'
                     properties:
                       key:
                         description: The key to select.
@@ -131,6 +130,25 @@ spec:
                   url:
                     description: 'Url: the repository URL.'
                     type: string
+                  usernameRef:
+                    description: 'UsernameRef: holds username required to git server
+                      authentication. - If ''authMethod'' is ''bearer'' the field
+                      is ignored. If the field is not set, username is setted as ''krateoctl'''
+                    properties:
+                      key:
+                        description: The key to select.
+                        type: string
+                      name:
+                        description: Name of the referenced object.
+                        type: string
+                      namespace:
+                        description: Namespace of the referenced object.
+                        type: string
+                    required:
+                    - key
+                    - name
+                    - namespace
+                    type: object
                 required:
                 - branch
                 - secretRef
@@ -161,8 +179,7 @@ spec:
                       copy from (or to).'
                     type: string
                   secretRef:
-                    description: 'SecretRef: holds credentials required to git server
-                      authentication.'
+                    description: 'SecretRef: holds token required to git server authentication.'
                     properties:
                       key:
                         description: The key to select.
@@ -181,6 +198,25 @@ spec:
                   url:
                     description: 'Url: the repository URL.'
                     type: string
+                  usernameRef:
+                    description: 'UsernameRef: holds username required to git server
+                      authentication. - If ''authMethod'' is ''bearer'' the field
+                      is ignored. If the field is not set, username is setted as ''krateoctl'''
+                    properties:
+                      key:
+                        description: The key to select.
+                        type: string
+                      name:
+                        description: Name of the referenced object.
+                        type: string
+                      namespace:
+                        description: Namespace of the referenced object.
+                        type: string
+                    required:
+                    - key
+                    - name
+                    - namespace
+                    type: object
                 required:
                 - branch
                 - secretRef

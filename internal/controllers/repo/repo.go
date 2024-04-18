@@ -69,11 +69,31 @@ func (e *external) Observe(ctx context.Context, mg resource.Managed) (reconciler
 		Insecure: e.cfg.Insecure,
 		Branch:   *cr.Spec.FromRepo.Branch,
 	})
+
+	if err != nil {
+		return reconciler.ExternalObservation{}, err
+	}
+
+	isTargetRepoSynced, err := git.IsInGitCommitHistory(git.ListOptions{
+		URL:      cr.Spec.ToRepo.Url,
+		Auth:     e.cfg.ToRepoCreds,
+		Insecure: e.cfg.Insecure,
+		Branch:   *cr.Spec.ToRepo.Branch,
+	}, helpers.String(cr.Status.TargetCommitId))
 	if err != nil {
 		return reconciler.ExternalObservation{}, err
 	}
 
 	if helpers.String(latestCommit) != helpers.String(cr.Status.OriginCommitId) {
+		e.log.Debug("Origin commit not found in origin remote repository", "commitId", cr.Status.OriginCommitId, "branch", cr.Status.OriginBranch)
+		return reconciler.ExternalObservation{
+			ResourceExists:   true,
+			ResourceUpToDate: false,
+		}, nil
+	}
+
+	if !isTargetRepoSynced {
+		e.log.Debug("Target commit not found in target remote repository", "commitId", cr.Status.TargetCommitId, "branch", cr.Status.TargetBranch)
 		return reconciler.ExternalObservation{
 			ResourceExists:   true,
 			ResourceUpToDate: false,

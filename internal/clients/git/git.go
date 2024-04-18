@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"path"
 	"path/filepath"
 	"time"
@@ -107,6 +108,56 @@ func GetLatestCommitRemote(opts ListOptions) (*string, error) {
 		}
 	}
 	return nil, fmt.Errorf(fmt.Sprintf("Branch %s reference %s not found on remote %s", opts.Branch, repoRef, opts.URL))
+}
+
+func IsInGitCommitHistory(opts ListOptions, hash string) (bool, error) {
+	res := &Repo{
+		rawURL: opts.URL,
+		auth:   opts.Auth,
+		storer: memory.NewStorage(),
+		fs:     memfs.New(),
+	}
+
+	cloneOpts := git.CloneOptions{
+		RemoteName:      "origin",
+		URL:             opts.URL,
+		Auth:            opts.Auth,
+		ReferenceName:   plumbing.NewBranchReferenceName(opts.Branch),
+		SingleBranch:    true,
+		InsecureSkipTLS: opts.Insecure,
+	}
+
+	var err error
+	res.repo, err = git.Clone(res.storer, res.fs, &cloneOpts)
+	if err != nil {
+		return false, fmt.Errorf("failed to clone repository: %v", err)
+	}
+	head, err := res.repo.Head()
+	if err != nil {
+		log.Fatalf("Failed to get HEAD: %v", err)
+		return false, fmt.Errorf("failed to get HEAD: %v", err)
+	}
+	iter, err := res.repo.Log(&git.LogOptions{From: head.Hash()})
+	if err != nil {
+		log.Fatalf("Failed to get commit history: %v", err)
+		return false, fmt.Errorf("failed to get commit history: %v", err)
+	}
+
+	fmt.Println("HEAD", head.Hash().String())
+
+	// Iterate through the commits
+	found := false
+	err = iter.ForEach(func(c *object.Commit) error {
+		if c.Hash.String() == hash {
+			found = true
+			return nil
+		}
+		return nil
+	})
+	if err != nil {
+		log.Fatalf("Failed to iterate through commits: %v", err)
+	}
+	return found, err
 }
 
 /*

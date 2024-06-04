@@ -19,14 +19,15 @@ type RepoOpts struct {
 	// +required
 	Branch *string `json:"branch"`
 
-	// SecretRef: holds token required to git server authentication.
+	// SecretRef: holds token required to git server authentication or cookie file in case of 'cookiefile' authMethod.
 	SecretRef *commonv1.SecretKeySelector `json:"secretRef"`
 
 	// UsernameRef: holds username required to git server authentication. - If 'authMethod' is 'bearer' the field is ignored. If the field is not set, username is setted as 'krateoctl'
 	// +optional
 	UsernameRef *commonv1.SecretKeySelector `json:"usernameRef"`
 
-	// AuthMethod defines the authentication mode. One of 'basic' or 'bearer'
+	// AuthMethod defines the authentication mode. One of 'basic' or 'bearer' or 'cookiefile'.
+	// In case of 'cookiefile' the secretRef must contain a file with the cookie.
 	// +optional
 	AuthMethod *string `json:"authMethod,omitempty"`
 

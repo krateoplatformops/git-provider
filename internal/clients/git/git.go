@@ -1,13 +1,20 @@
 package git
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io/fs"
 	"log"
+	"net/http"
+	"net/http/cookiejar"
+	"net/url"
 	"path"
 	"path/filepath"
 	"time"
+
+	gitclient "github.com/go-git/go-git/v5/plumbing/transport/client"
+	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
@@ -42,6 +49,7 @@ type Repo struct {
 	fs          billy.Filesystem
 	repo        *git.Repository
 	isNewBranch *bool
+	cookie      []byte
 }
 
 type CloneOptions struct {
@@ -51,13 +59,15 @@ type CloneOptions struct {
 	UnsupportedCapabilities bool
 	Branch                  string
 	AlternativeBranch       *string
+	GitCookies              []byte
 }
 
 type ListOptions struct {
-	URL      string
-	Auth     transport.AuthMethod
-	Insecure bool
-	Branch   string
+	URL        string
+	Auth       transport.AuthMethod
+	Insecure   bool
+	Branch     string
+	GitCookies []byte
 }
 
 type IndexOptions struct {
@@ -73,13 +83,69 @@ func NewStorage() *memory.Storage {
 	return mem
 }
 
+func (repo *Repo) setDefaultHTTPSClient() {
+	gitclient.InstallProtocol("https", githttp.NewClient(nil))
+}
+
+func (repo *Repo) setCustomHTTPSClientWithCookieJar() error {
+	// Initialize a CookieJar to hold our cookies
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		return fmt.Errorf("error creating cookie jar: %w", err)
+	}
+
+	repo.cookie = bytes.Trim(repo.cookie, "\n")
+	split := bytes.Split(repo.cookie, []byte("\t"))
+
+	if len(split) < 7 {
+		return nil
+		// return fmt.Errorf("invalid cookie split - len is %d - %s", len(split), string(repo.cookie))
+	}
+
+	cookie := &http.Cookie{
+		Name:       string(split[5]),
+		Value:      string(split[6]),
+		RawExpires: string(split[4]),
+		Path:       string(split[2]),
+		Domain:     string(split[0]),
+		Secure:     string(split[3]) == "TRUE",
+		HttpOnly:   string(split[1]) == "TRUE",
+	}
+
+	jar.SetCookies(
+		&url.URL{
+			Scheme: "https",
+			Host:   cookie.Domain,
+		},
+		[]*http.Cookie{
+			cookie,
+		},
+	)
+
+	customClient := &http.Client{
+		Jar: jar,
+	}
+
+	gitclient.InstallProtocol("https", githttp.NewClient(customClient))
+
+	return err
+}
+
 func GetLatestCommitRemote(opts ListOptions) (*string, error) {
 	res := &Repo{
 		rawURL: opts.URL,
 		auth:   opts.Auth,
 		storer: memory.NewStorage(),
 		fs:     memfs.New(),
+		cookie: opts.GitCookies,
 	}
+
+	if len(res.cookie) > 0 {
+		if err := res.setCustomHTTPSClientWithCookieJar(); err != nil {
+			return nil, err
+		}
+	}
+	defer res.setDefaultHTTPSClient()
 
 	var err error
 	res.repo, err = git.Init(res.storer, res.fs)
@@ -116,7 +182,15 @@ func IsInGitCommitHistory(opts ListOptions, hash string) (bool, error) {
 		auth:   opts.Auth,
 		storer: memory.NewStorage(),
 		fs:     memfs.New(),
+		cookie: opts.GitCookies,
 	}
+
+	if len(res.cookie) > 0 {
+		if err := res.setCustomHTTPSClientWithCookieJar(); err != nil {
+			return false, err
+		}
+	}
+	defer res.setDefaultHTTPSClient()
 
 	cloneOpts := git.CloneOptions{
 		RemoteName:      "origin",
@@ -130,6 +204,7 @@ func IsInGitCommitHistory(opts ListOptions, hash string) (bool, error) {
 	var err error
 	res.repo, err = git.Clone(res.storer, res.fs, &cloneOpts)
 	if err != nil {
+		log.Fatalf("failed to clone repository: %v", err)
 		return false, fmt.Errorf("failed to clone repository: %v", err)
 	}
 	head, err := res.repo.Head()
@@ -143,7 +218,7 @@ func IsInGitCommitHistory(opts ListOptions, hash string) (bool, error) {
 		return false, fmt.Errorf("failed to get commit history: %v", err)
 	}
 
-	fmt.Println("HEAD", head.Hash().String())
+	// fmt.Println("HEAD", head.Hash().String())
 
 	// Iterate through the commits
 	found := false
@@ -165,6 +240,11 @@ The function simulate the application of filemode of each from the origin repo (
 ---- git update-index --chmod
 */
 func (s *Repo) UpdateIndex(idx *IndexOptions) error {
+	if err := s.setCustomHTTPSClientWithCookieJar(); err != nil {
+		return err
+	}
+	defer s.setDefaultHTTPSClient()
+
 	getIndexRelative := func(basepath, targpath string) string {
 		if len(basepath) > 0 && basepath[0] != '/' {
 			basepath = fmt.Sprintf("%c%s", '/', basepath)
@@ -216,6 +296,13 @@ func Clone(opts CloneOptions) (*Repo, error) {
 		auth:   opts.Auth,
 		storer: NewStorage(),
 		fs:     memfs.New(),
+		cookie: opts.GitCookies,
+	}
+
+	if len(res.cookie) > 0 {
+		if err := res.setCustomHTTPSClientWithCookieJar(); err != nil {
+			return nil, err
+		}
 	}
 
 	if opts.UnsupportedCapabilities {
@@ -236,10 +323,11 @@ func Clone(opts CloneOptions) (*Repo, error) {
 	}
 	isOrphan := true
 	_, err = GetLatestCommitRemote(ListOptions{
-		URL:      opts.URL,
-		Auth:     opts.Auth,
-		Insecure: opts.Insecure,
-		Branch:   opts.Branch,
+		URL:        opts.URL,
+		Auth:       opts.Auth,
+		Insecure:   opts.Insecure,
+		Branch:     opts.Branch,
+		GitCookies: opts.GitCookies,
 	})
 	if err != nil {
 		cloneOpts = git.CloneOptions{
@@ -255,7 +343,11 @@ func Clone(opts CloneOptions) (*Repo, error) {
 		}
 		res.isNewBranch = helpers.BoolPtr(true)
 	}
-
+	if len(res.cookie) > 0 {
+		if err := res.setCustomHTTPSClientWithCookieJar(); err != nil {
+			return nil, err
+		}
+	}
 	res.repo, err = git.Clone(res.storer, res.fs, &cloneOpts)
 	if err != nil {
 		if errors.Is(err, transport.ErrRepositoryNotFound) {
@@ -280,10 +372,16 @@ func Clone(opts CloneOptions) (*Repo, error) {
 		Create: helpers.Bool(res.isNewBranch),
 		Orphan: isOrphan,
 	})
+
+	res.setDefaultHTTPSClient()
 	return res, err
 }
 
 func (s *Repo) Exists(path string) (bool, error) {
+	if err := s.setCustomHTTPSClientWithCookieJar(); err != nil {
+		return false, err
+	}
+	defer s.setDefaultHTTPSClient()
 	_, err := s.fs.Stat(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -301,6 +399,10 @@ func (s *Repo) FS() billy.Filesystem {
 }
 
 func (s *Repo) CurrentBranch() string {
+	if err := s.setCustomHTTPSClientWithCookieJar(); err != nil {
+		return ""
+	}
+	defer s.setDefaultHTTPSClient()
 	//head, _ := s.repo.Head()
 	head, _ := s.repo.Reference(plumbing.HEAD, false)
 
@@ -319,6 +421,11 @@ Switch braches or create according to parameters passed in createOpt.
   - if creteOpt is different from nil and both createOpt.Create and createOpt.Orphan are true a new branch is created from blank with no history or parents - `git switch --orphan branch-name`
 */
 func (s *Repo) Branch(name string, createOpt *CreateOpt) error {
+	if err := s.setCustomHTTPSClientWithCookieJar(); err != nil {
+		return err
+	}
+	defer s.setDefaultHTTPSClient()
+
 	ref := plumbing.NewBranchReferenceName(name)
 	if createOpt != nil && createOpt.Create {
 		ref = plumbing.NewBranchReferenceName(name)
@@ -361,6 +468,11 @@ func (s *Repo) Branch(name string, createOpt *CreateOpt) error {
 }
 
 func (s *Repo) Commit(path, msg string, opt *IndexOptions) (string, error) {
+	if err := s.setCustomHTTPSClientWithCookieJar(); err != nil {
+		return "", err
+	}
+	defer s.setDefaultHTTPSClient()
+
 	wt, err := s.repo.Worktree()
 	if err != nil {
 		return "", err
@@ -400,6 +512,11 @@ func (s *Repo) Commit(path, msg string, opt *IndexOptions) (string, error) {
 }
 
 func (s *Repo) Push(downstream, branch string, insecure bool) error {
+	if err := s.setCustomHTTPSClientWithCookieJar(); err != nil {
+		return err
+	}
+	defer s.setDefaultHTTPSClient()
+
 	//Push the code to the remote
 	if len(branch) == 0 {
 		return s.repo.Push(&git.PushOptions{
@@ -449,6 +566,11 @@ func (s *Repo) Push(downstream, branch string, insecure bool) error {
 }
 
 func Pull(s *Repo, insecure bool) error {
+	if err := s.setCustomHTTPSClientWithCookieJar(); err != nil {
+		return err
+	}
+	defer s.setDefaultHTTPSClient()
+
 	// Get the working directory for the repository
 	wt, err := s.repo.Worktree()
 	if err != nil {
@@ -471,6 +593,10 @@ func Pull(s *Repo, insecure bool) error {
 }
 
 func (s *Repo) GetLatestCommit(branch string) (string, error) {
+	if err := s.setCustomHTTPSClientWithCookieJar(); err != nil {
+		return "", err
+	}
+	defer s.setDefaultHTTPSClient()
 	refName := plumbing.NewBranchReferenceName(branch)
 	ref, err := s.repo.Reference(refName, true)
 	if err != nil {

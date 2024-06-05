@@ -64,23 +64,27 @@ func (e *external) Observe(ctx context.Context, mg resource.Managed) (reconciler
 		}, nil
 	}
 	latestCommit, err := git.GetLatestCommitRemote(git.ListOptions{
-		URL:      cr.Spec.FromRepo.Url,
-		Auth:     e.cfg.FromRepoCreds,
-		Insecure: e.cfg.Insecure,
-		Branch:   *cr.Spec.FromRepo.Branch,
+		URL:        cr.Spec.FromRepo.Url,
+		Auth:       e.cfg.FromRepoCreds,
+		Insecure:   e.cfg.Insecure,
+		Branch:     *cr.Spec.FromRepo.Branch,
+		GitCookies: e.cfg.FromRepoCookieFile,
 	})
 
 	if err != nil {
+		e.log.Debug("Unable to get latest commit from origin remote repository", "msg", err.Error())
 		return reconciler.ExternalObservation{}, err
 	}
 
 	isTargetRepoSynced, err := git.IsInGitCommitHistory(git.ListOptions{
-		URL:      cr.Spec.ToRepo.Url,
-		Auth:     e.cfg.ToRepoCreds,
-		Insecure: e.cfg.Insecure,
-		Branch:   *cr.Spec.ToRepo.Branch,
+		URL:        cr.Spec.ToRepo.Url,
+		Auth:       e.cfg.ToRepoCreds,
+		Insecure:   e.cfg.Insecure,
+		Branch:     *cr.Spec.ToRepo.Branch,
+		GitCookies: e.cfg.ToRepoCookieFile,
 	}, helpers.String(cr.Status.TargetCommitId))
 	if err != nil {
+		e.log.Debug("Unable to check if target repo is synced", "msg", err.Error())
 		return reconciler.ExternalObservation{}, err
 	}
 
@@ -102,10 +106,14 @@ func (e *external) Observe(ctx context.Context, mg resource.Managed) (reconciler
 
 	cr.Status.SetConditions(commonv1.Available())
 
+	// err = e.kube.Status().Update(context.TODO(), cr)
+	// if err != nil {
+	// 	return reconciler.ExternalObservation{}, fmt.Errorf("unable to update status: %w", err)
+	// }
 	return reconciler.ExternalObservation{
 		ResourceExists:   true,
 		ResourceUpToDate: true,
-	}, nil // e.kube.Status().Update(ctx, cr)
+	}, nil
 }
 
 func (e *external) Create(ctx context.Context, mg resource.Managed) error {
@@ -179,6 +187,8 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 
 	spec := cr.Spec.DeepCopy()
 
+	// fmt.Println("ToRepoCookieFile", string(e.cfg.ToRepoCookieFile))
+
 	toRepo, err := git.Clone(git.CloneOptions{
 		URL:                     spec.ToRepo.Url,
 		Auth:                    e.cfg.ToRepoCreds,
@@ -186,6 +196,7 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 		UnsupportedCapabilities: e.cfg.UnsupportedCapabilities,
 		Branch:                  helpers.String(spec.ToRepo.Branch),
 		AlternativeBranch:       cr.Spec.ToRepo.CloneFromBranch,
+		GitCookies:              e.cfg.ToRepoCookieFile,
 	})
 	if err != nil {
 		return errors.Wrapf(err, "cloning toRepo: %s", spec.ToRepo.Url)
@@ -201,6 +212,7 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 		Insecure:                e.cfg.Insecure,
 		UnsupportedCapabilities: e.cfg.UnsupportedCapabilities,
 		Branch:                  helpers.String(spec.FromRepo.Branch),
+		GitCookies:              e.cfg.FromRepoCookieFile,
 	})
 	if err != nil {
 		return err
@@ -291,7 +303,11 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 		cr.Status.TargetBranch = helpers.StringPtr(toRepo.CurrentBranch())
 		cr.Status.OriginBranch = helpers.StringPtr(fromRepo.CurrentBranch())
 
-		return e.kube.Status().Update(ctx, cr)
+		err = e.kube.Status().Update(ctx, cr)
+		if err != nil {
+			return fmt.Errorf("unable to update status: %w", err)
+		}
+		return nil
 	} else if err != nil {
 		return err
 	}
@@ -312,8 +328,11 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 	cr.Status.TargetCommitId = helpers.StringPtr(toRepoCommitId)
 	cr.Status.TargetBranch = helpers.StringPtr(toRepo.CurrentBranch())
 	cr.Status.OriginBranch = helpers.StringPtr(fromRepo.CurrentBranch())
-
-	return e.kube.Status().Update(ctx, cr)
+	err = e.kube.Status().Update(ctx, cr)
+	if err != nil {
+		return fmt.Errorf("unable to update status: %w", err)
+	}
+	return nil
 }
 
 func createRenderFunc(co *copier, values interface{}) {

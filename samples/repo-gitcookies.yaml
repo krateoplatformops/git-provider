@@ -1,0 +1,36 @@
+apiVersion: git.krateo.io/v1alpha1
+kind: Repo
+metadata:
+  name: git-gcp
+spec:
+  configMapKeyRef:
+    key: values
+    name: fw-replace-values
+    namespace: default
+  deletionPolicy: Orphan
+  enableUpdate: true
+  fromRepo:
+    authMethod: cookiefile
+    branch: main
+    cloneFromBranch: main
+    path: /
+    secretRef:
+      key: gitcookies
+      name: git-gcp-cookie
+      namespace: default
+    url: https://source.developers.google.com/p/buoyant-arcanum-425315-q1/r/git-auth
+  toRepo:
+    authMethod: generic
+    branch: main
+    path: /
+    usernameRef:
+      key: username
+      name: git-provider-username
+      namespace: default
+    secretRef:
+      key: token
+      name: git-provider
+      namespace: default
+    url: https://github.com/matteogastaldello/toRepo.git
+   
+  unsupportedCapabilities: true

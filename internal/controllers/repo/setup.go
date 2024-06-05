@@ -18,7 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
-	"github.com/go-git/go-git/v5/plumbing/transport/http"
+	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 
 	"github.com/pkg/errors"
 )
@@ -78,25 +78,55 @@ type externalClientOpts struct {
 	UnsupportedCapabilities bool
 	FromRepoCreds           transport.AuthMethod
 	ToRepoCreds             transport.AuthMethod
+	FromRepoCookieFile      []byte
+	ToRepoCookieFile        []byte
 }
 
 func loadExternalClientOpts(ctx context.Context, kc client.Client, cr *repov1alpha1.Repo) (*externalClientOpts, error) {
+	var fromRepoCookie, toRepoCookie []byte
 	fromRepoCreds, err := getRepoCredentials(ctx, kc, cr.Spec.FromRepo)
 	if err != nil {
 		return nil, errors.Wrapf(err, "retrieving from repo credentials")
+	}
+	fromRepoCookie = nil
+	if fromRepoCreds == nil {
+		fromRepoCookie, err = getRepoCookies(ctx, kc, cr.Spec.FromRepo)
+		if err != nil {
+			return nil, errors.Wrapf(err, "retrieving from repo cookies")
+		}
 	}
 
 	toRepoCreds, err := getRepoCredentials(ctx, kc, cr.Spec.ToRepo)
 	if err != nil {
 		return nil, errors.Wrapf(err, "retrieving to repo credentials")
 	}
+	if toRepoCreds == nil {
+		toRepoCookie, err = getRepoCookies(ctx, kc, cr.Spec.ToRepo)
+		if err != nil {
+			return nil, errors.Wrapf(err, "retrieving to repo cookies")
+		}
+	}
+
+	// fmt.Println("ToRepoCookieFile", string(toRepoCookie))
 
 	return &externalClientOpts{
 		Insecure:                helpers.Bool(cr.Spec.Insecure),
 		UnsupportedCapabilities: helpers.Bool(cr.Spec.UnsupportedCapabilities),
 		FromRepoCreds:           fromRepoCreds,
 		ToRepoCreds:             toRepoCreds,
+		FromRepoCookieFile:      fromRepoCookie,
+		ToRepoCookieFile:        toRepoCookie,
 	}, nil
+}
+
+func getRepoCookies(ctx context.Context, k client.Client, opts repov1alpha1.RepoOpts) ([]byte, error) {
+	if opts.SecretRef == nil {
+		return nil, nil
+	}
+
+	sec, err := resource.GetSecret(ctx, k, opts.SecretRef)
+
+	return []byte(sec), err
 }
 
 // getRepoCredentials returns the from repo credentials stored in a secret.
@@ -112,9 +142,13 @@ func getRepoCredentials(ctx context.Context, k client.Client, opts repov1alpha1.
 
 	authMethod := helpers.String(opts.AuthMethod)
 	if strings.EqualFold(authMethod, "bearer") {
-		return &http.TokenAuth{
+		return &githttp.TokenAuth{
 			Token: token,
 		}, nil
+	}
+
+	if strings.EqualFold(authMethod, "cookiefile") {
+		return nil, nil
 	}
 
 	username := "krateoctl"
@@ -125,7 +159,7 @@ func getRepoCredentials(ctx context.Context, k client.Client, opts repov1alpha1.
 		}
 	}
 
-	return &http.BasicAuth{
+	return &githttp.BasicAuth{
 		Username: username,
 		Password: token,
 	}, nil

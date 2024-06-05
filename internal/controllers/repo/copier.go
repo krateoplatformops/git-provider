@@ -12,17 +12,26 @@ import (
 )
 
 type copier struct {
-	fromRepo       *git.Repo
-	toRepo         *git.Repo
-	originCopyPath string
-	targetCopyPath string
-	renderFunc     func(in io.Reader, out io.Writer) error
-	krateoIgnore   *gi.GitIgnore
-	targetIgnore   *gi.GitIgnore
+	fromRepo        *git.Repo
+	toRepo          *git.Repo
+	originCopyPath  string
+	targetCopyPath  string
+	renderFunc      func(in io.Reader, out io.Writer) error
+	renderFileNames func(src string) (string, error)
+	krateoIgnore    *gi.GitIgnore
+	targetIgnore    *gi.GitIgnore
 }
 
 func (co *copier) copyFile(src, dst string, doNotRender bool) (err error) {
 	fromFS, toFS := co.fromRepo.FS(), co.toRepo.FS()
+
+	if !doNotRender && co.renderFileNames != nil {
+		var err error
+		dst, err = co.renderFileNames(dst)
+		if err != nil {
+			return err
+		}
+	}
 
 	in, err := fromFS.Open(src)
 	if err != nil {

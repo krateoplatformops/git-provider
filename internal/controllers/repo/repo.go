@@ -262,7 +262,7 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 				"Unable to load '.krateoignore' file: %s", err.Error())
 		}
 
-		createRenderFunc(co, values)
+		createRenderFuncs(co, values)
 
 		toPath := helpers.String(spec.ToRepo.Path)
 		if len(toPath) == 0 {
@@ -335,7 +335,7 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 	return nil
 }
 
-func createRenderFunc(co *copier, values interface{}) {
+func createRenderFuncs(co *copier, values interface{}) {
 	co.renderFunc = func(in io.Reader, out io.Writer) error {
 		bin, err := io.ReadAll(in)
 		if err != nil {
@@ -348,6 +348,14 @@ func createRenderFunc(co *copier, values interface{}) {
 
 		return tmpl.FRender(out, values)
 	}
+	co.renderFileNames = func(src string) (string, error) {
+		tmpl, err := mustache.ParseString(src)
+		if err != nil {
+			return "", err
+		}
+		return tmpl.Render(values)
+	}
+
 }
 
 func loadIgnoreFileEventually(co *copier) error {

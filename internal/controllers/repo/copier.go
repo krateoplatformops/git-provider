@@ -83,6 +83,33 @@ func (co *copier) copyDir(src, dst string) (err error) {
 		return fmt.Errorf("source is not a directory")
 	}
 
+	doNotRender := false
+	doNotCopy := false
+	if co.krateoIgnore != nil {
+		if co.krateoIgnore.MatchesPath(src) {
+			doNotRender = true
+		}
+	}
+	if co.targetIgnore != nil {
+		relSrc, err := filepath.Rel(co.originCopyPath, src)
+		if err != nil {
+			return err
+		}
+		if co.targetIgnore.MatchesPath(filepath.Join(co.targetCopyPath, relSrc)) {
+			doNotCopy = true
+		}
+	}
+	if doNotCopy {
+		return
+	}
+	if !doNotRender && co.renderFileNames != nil {
+		var err error
+		dst, err = co.renderFileNames(dst)
+		if err != nil {
+			return err
+		}
+	}
+
 	err = toFS.MkdirAll(dst, si.Mode())
 	if err != nil {
 		return

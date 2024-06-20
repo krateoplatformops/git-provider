@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -173,6 +172,7 @@ func GetLatestCommitRemote(opts ListOptions) (*string, error) {
 			return helpers.StringPtr(ref.Hash().String()), nil
 		}
 	}
+
 	return nil, fmt.Errorf(fmt.Sprintf("Branch %s reference %s not found on remote %s", opts.Branch, repoRef, opts.URL))
 }
 
@@ -204,17 +204,14 @@ func IsInGitCommitHistory(opts ListOptions, hash string) (bool, error) {
 	var err error
 	res.repo, err = git.Clone(res.storer, res.fs, &cloneOpts)
 	if err != nil {
-		log.Fatalf("failed to clone repository: %v", err)
 		return false, fmt.Errorf("failed to clone repository: %v", err)
 	}
 	head, err := res.repo.Head()
 	if err != nil {
-		log.Fatalf("Failed to get HEAD: %v", err)
 		return false, fmt.Errorf("failed to get HEAD: %v", err)
 	}
 	iter, err := res.repo.Log(&git.LogOptions{From: head.Hash()})
 	if err != nil {
-		log.Fatalf("Failed to get commit history: %v", err)
 		return false, fmt.Errorf("failed to get commit history: %v", err)
 	}
 
@@ -230,7 +227,7 @@ func IsInGitCommitHistory(opts ListOptions, hash string) (bool, error) {
 		return nil
 	})
 	if err != nil {
-		log.Fatalf("Failed to iterate through commits: %v", err)
+		return false, fmt.Errorf("failed to iterate through commits: %v", err)
 	}
 	return found, err
 }

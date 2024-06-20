@@ -53,6 +53,17 @@ func (e *external) Observe(ctx context.Context, mg resource.Managed) (reconciler
 		return reconciler.ExternalObservation{}, errors.New(errNotRepo)
 	}
 
+	if !cr.DeletionTimestamp.IsZero() && cr.GetCondition(commonv1.TypeSynced).Reason == commonv1.ReasonReconcileError {
+		if !meta.IsActionAllowed(cr, meta.ActionDelete) {
+			e.log.Debug("External resource should not be deleted by provider, skip deleting.")
+		} else {
+			return reconciler.ExternalObservation{
+				ResourceExists:   false,
+				ResourceUpToDate: true,
+			}, nil
+		}
+	}
+
 	if cr.Status.TargetCommitId != nil {
 		meta.SetExternalName(cr, helpers.String(cr.Status.TargetCommitId))
 	}
@@ -156,6 +167,8 @@ func (e *external) Delete(ctx context.Context, mg resource.Managed) error {
 		e.log.Debug("External resource should not be deleted by provider, skip deleting.")
 		return nil
 	}
+
+	e.log.Info("Deleting resource", "name", cr.Name)
 
 	cr.Status.SetConditions(commonv1.Deleting())
 

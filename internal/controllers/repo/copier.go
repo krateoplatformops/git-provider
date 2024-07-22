@@ -22,6 +22,21 @@ type copier struct {
 	targetIgnore    *gi.GitIgnore
 }
 
+func newCopier(fromRepo, toRepo *git.Repo, originCopyPath, targetCopyPath string) *copier {
+	if originCopyPath == "" {
+		originCopyPath = "/"
+	}
+	if targetCopyPath == "" {
+		targetCopyPath = "/"
+	}
+	return &copier{
+		fromRepo:       fromRepo,
+		toRepo:         toRepo,
+		originCopyPath: originCopyPath,
+		targetCopyPath: targetCopyPath,
+	}
+}
+
 func (co *copier) copyFile(src, dst string, doNotRender bool) (err error) {
 	fromFS, toFS := co.fromRepo.FS(), co.toRepo.FS()
 

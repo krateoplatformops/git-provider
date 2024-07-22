@@ -38,6 +38,7 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 			log:      log,
 			recorder: recorder,
 		}),
+		reconciler.WithPollInterval(o.PollInterval),
 		reconciler.WithLogger(log),
 		reconciler.WithRecorder(event.NewAPIRecorder(recorder)))
 

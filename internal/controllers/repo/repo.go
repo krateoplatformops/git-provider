@@ -64,6 +64,14 @@ func (e *external) Observe(ctx context.Context, mg resource.Managed) (reconciler
 		}
 	}
 
+	if !helpers.Bool(cr.Spec.EnableUpdate) {
+		e.log.Debug("External resource should not be observed by provider, skip observing. EnableUpdate is false.")
+		return reconciler.ExternalObservation{
+			ResourceExists:   true,
+			ResourceUpToDate: true,
+		}, nil
+	}
+
 	if cr.Status.TargetCommitId != nil {
 		meta.SetExternalName(cr, helpers.String(cr.Status.TargetCommitId))
 	}

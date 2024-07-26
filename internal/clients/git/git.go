@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"path"
 	"path/filepath"
+	"strings"
 	"time"
 
 	gitclient "github.com/go-git/go-git/v5/plumbing/transport/client"
@@ -176,6 +177,10 @@ func GetLatestCommitRemote(opts ListOptions) (*string, error) {
 	return nil, fmt.Errorf(fmt.Sprintf("Branch %s reference %s not found on remote %s", opts.Branch, repoRef, opts.URL))
 }
 
+func restoreUnsupportedCapabilities(oldUnsupportedCaps []capability.Capability) {
+	transport.UnsupportedCapabilities = oldUnsupportedCaps
+}
+
 func IsInGitCommitHistory(opts ListOptions, hash string) (bool, error) {
 	res := &Repo{
 		rawURL: opts.URL,
@@ -199,6 +204,19 @@ func IsInGitCommitHistory(opts ListOptions, hash string) (bool, error) {
 		ReferenceName:   plumbing.NewBranchReferenceName(opts.Branch),
 		SingleBranch:    true,
 		InsecureSkipTLS: opts.Insecure,
+	}
+
+	oldUnsupportedCaps := transport.UnsupportedCapabilities
+	defer restoreUnsupportedCapabilities(oldUnsupportedCaps)
+
+	// Azure DevOps requires multi_ack and multi_ack_detailed capabilities, which go-git doesn't
+	// implement. But: it's possible to do a full clone by saying it's _not_ _un_supported, in which
+	// case the library happily functions so long as it doesn't _actually_ get a multi_ack packet. See
+	// https://github.com/go-git/go-git/blob/v5.5.1/_examples/azure_devops/main.go.
+	if strings.Contains(opts.URL, "dev.azure.com") {
+		transport.UnsupportedCapabilities = []capability.Capability{
+			capability.ThinPack,
+		}
 	}
 
 	var err error

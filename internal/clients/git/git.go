@@ -222,6 +222,9 @@ func IsInGitCommitHistory(opts ListOptions, hash string) (bool, error) {
 	var err error
 	res.repo, err = git.Clone(res.storer, res.fs, &cloneOpts)
 	if err != nil {
+		if strings.Contains(err.Error(), "couldn't find remote ref") {
+			return false, nil
+		}
 		return false, fmt.Errorf("failed to clone repository: %v", err)
 	}
 	head, err := res.repo.Head()

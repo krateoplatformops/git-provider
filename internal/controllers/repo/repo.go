@@ -64,12 +64,13 @@ func (e *external) Observe(ctx context.Context, mg resource.Managed) (reconciler
 		}
 	}
 
-	if !helpers.Bool(cr.Spec.EnableUpdate) {
-		e.log.Debug("External resource should not be observed by provider, skip observing. EnableUpdate is false.")
+	if !helpers.Bool(cr.Spec.EnableUpdate) && cr.Status.TargetCommitId != nil && cr.Status.OriginCommitId != nil && cr.Status.TargetBranch != nil && cr.Status.OriginBranch != nil {
+		e.log.Debug("External resource should not be observed by provider, skip observing. EnableUpdate is false.", "name", cr.Name)
+		cr.Status.SetConditions(commonv1.Available())
 		return reconciler.ExternalObservation{
 			ResourceExists:   true,
 			ResourceUpToDate: true,
-		}, nil
+		}, e.kube.Status().Update(ctx, cr)
 	}
 
 	if cr.Status.TargetCommitId != nil {

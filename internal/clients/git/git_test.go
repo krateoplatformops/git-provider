@@ -1,100 +1,32 @@
-//go:build integration
-// +build integration
-
 package git
 
 import (
-	"io"
-	"os"
-	"strings"
 	"testing"
-
-	"github.com/go-git/go-git/v5/plumbing/transport/http"
-	"github.com/lucasepe/dotenv"
 )
 
-func TestClone(t *testing.T) {
-	setEnv()
+func TestIsInGitCommitHistory(t *testing.T) {
 
-	repo, err := Clone(CloneOptions{
-		URL: os.Getenv("URL"),
-		Auth: &http.BasicAuth{
-			Username: "krateoctl",
-			Password: os.Getenv("TOKEN"),
-		},
-		Insecure:                true,
-		UnsupportedCapabilities: true,
-	})
+	baseRepo := BaseSuite{}
+	baseRepo.BuildBasicRepository()
+	// origin, err := git.Clone(git.CloneOptions{
+	// 	URL: baseRepo.GetBasicLocalRepositoryURL(),
+	// })
+	// require.NoError(t, err)
+
+	opts := ListOptions{
+		URL: baseRepo.GetBasicLocalRepositoryURL(),
+	}
+
+	hash := "0123456789abcdef0123456789abcdef01234567"
+
+	exists, err := IsInGitCommitHistory(opts, hash)
 	if err != nil {
-		t.Fatal(err)
+		t.Errorf("Error checking commit history: %v", err)
 	}
 
-	all, err := repo.FS().ReadDir("/")
-	if err != nil {
-		t.Fatal(err)
+	if exists {
+		t.Logf("Commit %s exists in the Git repository", hash)
+	} else {
+		t.Logf("Commit %s does not exist in the Git repository", hash)
 	}
-
-	for _, el := range all {
-		t.Log(el.Name())
-	}
-}
-
-func TestWriteBytes(t *testing.T) {
-	setEnv()
-
-	repo, err := Clone(CloneOptions{
-		URL: os.Getenv("URL"),
-		Auth: &http.BasicAuth{
-			Username: "krateoctl",
-			Password: os.Getenv("TOKEN"),
-		},
-		Insecure:                true,
-		UnsupportedCapabilities: true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	out, err := repo.FS().Create("JUST_TO_TEST_A_ISSUE.md")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer func() {
-		if e := out.Close(); e != nil {
-			err = e
-		}
-	}()
-
-	in := strings.NewReader("Please be patient...")
-	if _, err = io.Copy(out, in); err != nil {
-		t.Fatal(err)
-	}
-
-	all, err := repo.FS().ReadDir("/")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	for _, el := range all {
-		t.Log(el.Name())
-	}
-
-	t.Logf("current branch: %s", repo.CurrentBranch())
-
-	commitId, err := repo.Commit(".", "first commit")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("commitId: %s", commitId)
-
-	err = repo.Push("origin", repo.CurrentBranch(), true)
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func setEnv() {
-	env, _ := dotenv.FromFile("../../../.env")
-	dotenv.PutInEnv(env, false)
 }

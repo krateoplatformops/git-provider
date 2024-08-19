@@ -79,6 +79,7 @@ spec:
 | `spec.fromRepo.path` | string | `/` | Represents the folder to clone from. If not set the entire repository is cloned |
 | `spec.toRepo.branch` | string | `nil` | Represents the branch to populate. If the branch does not exist on remote is created by the provider |
 | `spec.toRepo.cloneFromBranch` | string | `nil` | If set, the provider clones the toRepo repository from `cloneFromBranch`, copies the content specified in `fromRepo` into the cloned branch, and pushes the changes to `spec.toRepo.branch` |
+| `spec.toRepo.path` | string | `/` | Represents the folder of the `toRepo` repository to use as destination |
 
 
 

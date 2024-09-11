@@ -53,6 +53,13 @@ func (e *external) Observe(ctx context.Context, mg resource.Managed) (reconciler
 		return reconciler.ExternalObservation{}, errors.New(errNotRepo)
 	}
 
+	if cr.GetCondition(commonv1.TypeReady).Reason == commonv1.ReasonDeleting {
+		return reconciler.ExternalObservation{
+			ResourceExists:   false,
+			ResourceUpToDate: true,
+		}, nil
+	}
+
 	if !cr.DeletionTimestamp.IsZero() && cr.GetCondition(commonv1.TypeSynced).Reason == commonv1.ReasonReconcileError {
 		if !meta.IsActionAllowed(cr, meta.ActionDelete) {
 			e.log.Debug("External resource should not be deleted by provider, skip deleting.")
@@ -270,7 +277,7 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 
 		err = loadIgnoreTargetFiles(ptr.StringFromPtr(spec.ToRepo.Path), co)
 		if err != nil {
-			return err
+			return fmt.Errorf("unable to load ignore target files: %w", err)
 		}
 
 		if err := loadIgnoreFileEventually(co); err != nil {
@@ -287,7 +294,7 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 		}
 
 		if err := co.copyDir(fromPath, toPath); err != nil {
-			return err
+			return fmt.Errorf("unable to copy files: %w", err)
 		}
 	}
 
@@ -334,7 +341,7 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 
 	err = toRepo.Push("origin", toRepo.CurrentBranch(), e.cfg.Insecure)
 	if err != nil {
-		return err
+		return fmt.Errorf("unable to push target repo: %w", err)
 	}
 	e.log.Debug("Target repo pushed", "branch", toRepo.CurrentBranch(), "commitId", toRepoCommitId)
 	e.rec.Eventf(cr, corev1.EventTypeNormal, "RepoPushSuccess",
@@ -356,11 +363,11 @@ func createRenderFuncs(co *copier, values interface{}) {
 	co.renderFunc = func(in io.Reader, out io.Writer) error {
 		bin, err := io.ReadAll(in)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to read file: %w", err)
 		}
 		tmpl, err := mustache.ParseString(string(bin))
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to parse template: %w", err)
 		}
 
 		return tmpl.FRender(out, values)
@@ -368,9 +375,14 @@ func createRenderFuncs(co *copier, values interface{}) {
 	co.renderFileNames = func(src string) (string, error) {
 		tmpl, err := mustache.ParseString(src)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to parse file names: %w", err)
 		}
-		return tmpl.Render(values)
+
+		s, err := tmpl.Render(values)
+		if err != nil {
+			return "", fmt.Errorf("failed to render file names: %w", err)
+		}
+		return s, nil
 	}
 
 }

@@ -44,19 +44,19 @@ func (co *copier) copyFile(src, dst string, doNotRender bool) (err error) {
 		var err error
 		dst, err = co.renderFileNames(dst)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to render file names: %w", err)
 		}
 	}
 
 	in, err := fromFS.Open(src)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to open source file: %w", err)
 	}
 	defer in.Close()
 
 	out, err := toFS.Create(dst)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create destination file: %w", err)
 	}
 
 	defer func() {
@@ -92,7 +92,7 @@ func (co *copier) copyDir(src, dst string) (err error) {
 
 	si, err := fromFS.Stat(src)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to stat source: %w", err)
 	}
 	if !si.IsDir() {
 		return fmt.Errorf("source is not a directory")
@@ -108,7 +108,7 @@ func (co *copier) copyDir(src, dst string) (err error) {
 	if co.targetIgnore != nil {
 		relSrc, err := filepath.Rel(co.originCopyPath, src)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to get relative path: %w", err)
 		}
 		if co.targetIgnore.MatchesPath(filepath.Join(co.targetCopyPath, relSrc)) {
 			doNotCopy = true
@@ -118,10 +118,9 @@ func (co *copier) copyDir(src, dst string) (err error) {
 		return
 	}
 	if !doNotRender && co.renderFileNames != nil {
-		var err error
 		dst, err = co.renderFileNames(dst)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to render file names: %w", err)
 		}
 	}
 
@@ -160,7 +159,7 @@ func (co *copier) copyDir(src, dst string) (err error) {
 			if co.targetIgnore != nil {
 				relSrc, err := filepath.Rel(co.originCopyPath, srcPath)
 				if err != nil {
-					return err
+					return fmt.Errorf("failed to get relative path: %w", err)
 				}
 				if co.targetIgnore.MatchesPath(filepath.Join(co.targetCopyPath, relSrc)) {
 					doNotCopy = true

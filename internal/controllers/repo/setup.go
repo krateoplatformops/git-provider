@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	repov1alpha1 "github.com/krateoplatformops/git-provider/apis/repo/v1alpha1"
-	"github.com/krateoplatformops/provider-runtime/pkg/helpers"
+	"github.com/krateoplatformops/git-provider/internal/ptr"
 	"github.com/krateoplatformops/provider-runtime/pkg/reconciler"
 
 	"github.com/krateoplatformops/provider-runtime/pkg/controller"
@@ -46,7 +46,7 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 		Named(name).
 		WithOptions(o.ForControllerRuntime()).
 		For(&repov1alpha1.Repo{}).
-		Complete(ratelimiter.NewReconciler(name, r, o.GlobalRateLimiter))
+		Complete(ratelimiter.New(name, r, o.GlobalRateLimiter))
 }
 
 type connector struct {
@@ -111,8 +111,8 @@ func loadExternalClientOpts(ctx context.Context, kc client.Client, cr *repov1alp
 	// fmt.Println("ToRepoCookieFile", string(toRepoCookie))
 
 	return &externalClientOpts{
-		Insecure:                helpers.Bool(cr.Spec.Insecure),
-		UnsupportedCapabilities: helpers.Bool(cr.Spec.UnsupportedCapabilities),
+		Insecure:                ptr.BoolFromPtr(cr.Spec.Insecure),
+		UnsupportedCapabilities: ptr.BoolFromPtr(cr.Spec.UnsupportedCapabilities),
 		FromRepoCreds:           fromRepoCreds,
 		ToRepoCreds:             toRepoCreds,
 		FromRepoCookieFile:      fromRepoCookie,
@@ -141,7 +141,7 @@ func getRepoCredentials(ctx context.Context, k client.Client, opts repov1alpha1.
 		return nil, err
 	}
 
-	authMethod := helpers.String(opts.AuthMethod)
+	authMethod := ptr.StringFromPtr(opts.AuthMethod)
 	if strings.EqualFold(authMethod, "bearer") {
 		return &githttp.TokenAuth{
 			Token: token,

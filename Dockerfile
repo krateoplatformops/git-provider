@@ -1,6 +1,6 @@
 # Build environment
 # -----------------
-FROM golang:1.22-bullseye as builder
+FROM golang:1.23-bullseye as builder
 LABEL stage=builder
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -19,7 +19,7 @@ COPY go.sum go.sum
 # and so that source changes don't invalidate our downloaded layer
 RUN go mod download
 
-COPY cmd/ cmd/
+COPY main.go main.go
 COPY apis/ apis/
 COPY internal/ internal/
 

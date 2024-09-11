@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.15.0
+    controller-gen.kubebuilder.io/version: v0.16.1
   name: repoes.git.krateo.io
 spec:
   group: git.krateo.io
@@ -81,16 +81,6 @@ spec:
                 - name
                 - namespace
                 type: object
-              deletionPolicy:
-                default: Delete
-                description: |-
-                  DeletionPolicy specifies what will happen to the underlying external
-                  when this managed resource is deleted - either "Delete" or "Orphan" the
-                  external resource.
-                enum:
-                - Orphan
-                - Delete
-                type: string
               enableUpdate:
                 description: 'Enable sync with origin repo. Target repo will be reconciled
                   the changes on origin - experimental (default: false)'

@@ -2,6 +2,8 @@ package v1alpha1
 
 import (
 	commonv1 "github.com/krateoplatformops/provider-runtime/apis/common/v1"
+	prv1 "github.com/krateoplatformops/provider-runtime/apis/common/v1"
+	"github.com/krateoplatformops/provider-runtime/pkg/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -42,8 +44,6 @@ type RepoOpts struct {
 
 // A RepoSpec defines the desired state of a Repo.
 type RepoSpec struct {
-	commonv1.ManagedSpec `json:",inline"`
-
 	// FromRepo: repo origin to copy from
 	// +immutable
 	FromRepo RepoOpts `json:"fromRepo"`
@@ -74,7 +74,7 @@ type RepoSpec struct {
 
 // A RepoStatus represents the observed state of a Repo.
 type RepoStatus struct {
-	commonv1.ManagedStatus `json:",inline"`
+	commonv1.ConditionedStatus `json:",inline"`
 
 	// OriginCommitId: last commit identifier of the origin repo
 	OriginCommitId *string `json:"originCommitId,omitempty"`
@@ -116,4 +116,23 @@ type RepoList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []Repo `json:"items"`
+}
+
+// GetCondition of this Repo.
+func (mg *Repo) GetCondition(ct prv1.ConditionType) prv1.Condition {
+	return mg.Status.GetCondition(ct)
+}
+
+// SetConditions of this Repo.
+func (mg *Repo) SetConditions(c ...prv1.Condition) {
+	mg.Status.SetConditions(c...)
+}
+
+// GetItems of this RepoList.
+func (l *RepoList) GetItems() []resource.Managed {
+	items := make([]resource.Managed, len(l.Items))
+	for i := range l.Items {
+		items[i] = &l.Items[i]
+	}
+	return items
 }

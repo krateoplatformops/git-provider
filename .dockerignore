@@ -7,3 +7,4 @@ crds/
 hack/
 samples/
 README.md
+.env

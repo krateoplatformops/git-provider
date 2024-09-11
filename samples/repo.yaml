@@ -14,11 +14,11 @@ spec:
     path: /
     usernameRef:
       key: username
-      name: github-username
+      name: git-username
       namespace: default
     secretRef:
       key: token
-      name: github-auth
+      name: git-secret
       namespace: default
     url: https://github.com/matteogastaldello/fromRepo
   toRepo:

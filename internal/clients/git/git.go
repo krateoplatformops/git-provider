@@ -25,7 +25,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage/memory"
-	"github.com/krateoplatformops/provider-runtime/pkg/helpers"
+	"github.com/krateoplatformops/git-provider/internal/ptr"
 )
 
 const (
@@ -170,7 +170,7 @@ func GetLatestCommitRemote(opts ListOptions) (*string, error) {
 	repoRef := plumbing.NewBranchReferenceName(opts.Branch)
 	for _, ref := range refs {
 		if ref.Name() == repoRef {
-			return helpers.StringPtr(ref.Hash().String()), nil
+			return ptr.PtrTo(ref.Hash().String()), nil
 		}
 	}
 
@@ -356,10 +356,10 @@ func Clone(opts CloneOptions) (*Repo, error) {
 		}
 		if opts.AlternativeBranch != nil {
 			isOrphan = false
-			cloneOpts.ReferenceName = plumbing.NewBranchReferenceName(helpers.String(opts.AlternativeBranch))
+			cloneOpts.ReferenceName = plumbing.NewBranchReferenceName(ptr.StringFromPtr(opts.AlternativeBranch))
 			cloneOpts.SingleBranch = true
 		}
-		res.isNewBranch = helpers.BoolPtr(true)
+		res.isNewBranch = ptr.PtrTo(true)
 	}
 	if len(res.cookie) > 0 {
 		if err := res.setCustomHTTPSClientWithCookieJar(); err != nil {
@@ -387,7 +387,7 @@ func Clone(opts CloneOptions) (*Repo, error) {
 	}
 
 	err = res.Branch(opts.Branch, &CreateOpt{
-		Create: helpers.Bool(res.isNewBranch),
+		Create: ptr.BoolFromPtr(res.isNewBranch),
 		Orphan: isOrphan,
 	})
 
@@ -510,7 +510,7 @@ func (s *Repo) Commit(path, msg string, opt *IndexOptions) (string, error) {
 		return "", err
 	}
 
-	if fStatus.IsClean() && !helpers.Bool(s.isNewBranch) {
+	if fStatus.IsClean() && !ptr.BoolFromPtr(s.isNewBranch) {
 		return "", NoErrAlreadyUpToDate
 	}
 

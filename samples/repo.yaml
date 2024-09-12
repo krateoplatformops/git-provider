@@ -1,24 +1,24 @@
 apiVersion: git.krateo.io/v1alpha1
 kind: Repo
 metadata:
-  name: git-user
+  name: git-azuredevops-branch-5
 spec:
+  enableUpdate: false
   configMapKeyRef:
     key: values
-    name: test-push-cm
+    name: filename-replace-values
     namespace: default
-  deletionPolicy: Orphan
   fromRepo:
     authMethod: generic
     branch: main
-    path: /
+    path: skeleton
     usernameRef:
       key: username
-      name: github-username
+      name: git-username
       namespace: default
     secretRef:
       key: token
-      name: github-auth
+      name: git-secret
       namespace: default
     url: https://github.com/matteogastaldello/fromRepo
   toRepo:
@@ -28,11 +28,11 @@ spec:
     path: /
     secretRef:
       key: token
-      name: github-auth
+      name: git-secret
       namespace: default
     usernameRef:
       key: username
-      name: github-username
+      name: git-username
       namespace: default
-    url: https://github.com/matteogastaldello/toRepo
+    url: https://matteogastaldello-org@dev.azure.com/matteogastaldello-org/teamproject/_git/repo-generated
   unsupportedCapabilities: true

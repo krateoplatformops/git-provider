@@ -9,7 +9,6 @@ import (
 	"github.com/pkg/errors"
 
 	commonv1 "github.com/krateoplatformops/provider-runtime/apis/common/v1"
-	"github.com/krateoplatformops/provider-runtime/pkg/helpers"
 	"k8s.io/client-go/tools/record"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -22,6 +21,7 @@ import (
 
 	repov1alpha1 "github.com/krateoplatformops/git-provider/apis/repo/v1alpha1"
 	"github.com/krateoplatformops/git-provider/internal/clients/git"
+	"github.com/krateoplatformops/git-provider/internal/ptr"
 
 	corev1 "k8s.io/api/core/v1"
 )
@@ -47,6 +47,13 @@ func (e *external) Observe(ctx context.Context, mg resource.Managed) (reconciler
 		return reconciler.ExternalObservation{}, errors.New(errNotRepo)
 	}
 
+	if cr.GetCondition(commonv1.TypeReady).Reason == commonv1.ReasonDeleting {
+		return reconciler.ExternalObservation{
+			ResourceExists:   false,
+			ResourceUpToDate: true,
+		}, nil
+	}
+
 	if !cr.DeletionTimestamp.IsZero() && cr.GetCondition(commonv1.TypeSynced).Reason == commonv1.ReasonReconcileError {
 		if !meta.IsActionAllowed(cr, meta.ActionDelete) {
 			e.log.Debug("External resource should not be deleted by provider, skip deleting.")
@@ -58,7 +65,7 @@ func (e *external) Observe(ctx context.Context, mg resource.Managed) (reconciler
 		}
 	}
 
-	if !helpers.Bool(cr.Spec.EnableUpdate) && cr.Status.TargetCommitId != nil && cr.Status.OriginCommitId != nil && cr.Status.TargetBranch != nil && cr.Status.OriginBranch != nil {
+	if !ptr.BoolFromPtr(cr.Spec.EnableUpdate) && cr.Status.TargetCommitId != nil && cr.Status.OriginCommitId != nil && cr.Status.TargetBranch != nil && cr.Status.OriginBranch != nil {
 		e.log.Debug("External resource should not be observed by provider, skip observing. EnableUpdate is false.", "name", cr.Name)
 		cr.Status.SetConditions(commonv1.Available())
 		return reconciler.ExternalObservation{
@@ -68,7 +75,7 @@ func (e *external) Observe(ctx context.Context, mg resource.Managed) (reconciler
 	}
 
 	if cr.Status.TargetCommitId != nil {
-		meta.SetExternalName(cr, helpers.String(cr.Status.TargetCommitId))
+		meta.SetExternalName(cr, ptr.StringFromPtr(cr.Status.TargetCommitId))
 	}
 
 	if meta.GetExternalName(cr) == "" {
@@ -96,13 +103,13 @@ func (e *external) Observe(ctx context.Context, mg resource.Managed) (reconciler
 		Insecure:   e.cfg.Insecure,
 		Branch:     *cr.Spec.ToRepo.Branch,
 		GitCookies: e.cfg.ToRepoCookieFile,
-	}, helpers.String(cr.Status.TargetCommitId))
+	}, ptr.StringFromPtr(cr.Status.TargetCommitId))
 	if err != nil {
 		e.log.Debug("Unable to check if target repo is synced", "msg", err.Error())
 		return reconciler.ExternalObservation{}, err
 	}
 
-	if helpers.String(latestCommit) != helpers.String(cr.Status.OriginCommitId) {
+	if ptr.StringFromPtr(latestCommit) != ptr.StringFromPtr(cr.Status.OriginCommitId) {
 		e.log.Debug("Origin commit not found in origin remote repository", "commitId", cr.Status.OriginCommitId, "branch", cr.Status.OriginBranch)
 		return reconciler.ExternalObservation{
 			ResourceExists:   true,
@@ -149,7 +156,7 @@ func (e *external) Update(ctx context.Context, mg resource.Managed) error {
 		return errors.New(errNotRepo)
 	}
 
-	if !helpers.Bool(cr.Spec.EnableUpdate) {
+	if !ptr.BoolFromPtr(cr.Spec.EnableUpdate) {
 		e.log.Debug("External resource should not be updated by provider, skip updating.")
 		return nil
 	}
@@ -210,7 +217,7 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 		Auth:                    e.cfg.ToRepoCreds,
 		Insecure:                e.cfg.Insecure,
 		UnsupportedCapabilities: e.cfg.UnsupportedCapabilities,
-		Branch:                  helpers.String(spec.ToRepo.Branch),
+		Branch:                  ptr.StringFromPtr(spec.ToRepo.Branch),
 		AlternativeBranch:       cr.Spec.ToRepo.CloneFromBranch,
 		GitCookies:              e.cfg.ToRepoCookieFile,
 	})
@@ -227,7 +234,7 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 		Auth:                    e.cfg.FromRepoCreds,
 		Insecure:                e.cfg.Insecure,
 		UnsupportedCapabilities: e.cfg.UnsupportedCapabilities,
-		Branch:                  helpers.String(spec.FromRepo.Branch),
+		Branch:                  ptr.StringFromPtr(spec.FromRepo.Branch),
 		GitCookies:              e.cfg.FromRepoCookieFile,
 	})
 	if err != nil {
@@ -243,10 +250,10 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 		return err
 	}
 
-	co := newCopier(fromRepo, toRepo, helpers.String(spec.FromRepo.Path), helpers.String(spec.ToRepo.Path))
+	co := newCopier(fromRepo, toRepo, ptr.StringFromPtr(spec.FromRepo.Path), ptr.StringFromPtr(spec.ToRepo.Path))
 
 	// If fromPath is not specified DON'T COPY!
-	fromPath := helpers.String(spec.FromRepo.Path)
+	fromPath := ptr.StringFromPtr(spec.FromRepo.Path)
 	if len(fromPath) > 0 {
 		values, err := e.loadValuesFromConfigMap(ctx, spec.ConfigMapKeyRef)
 		if err != nil {
@@ -262,9 +269,9 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 			"values", values,
 		)
 
-		err = loadIgnoreTargetFiles(helpers.String(spec.ToRepo.Path), co)
+		err = loadIgnoreTargetFiles(ptr.StringFromPtr(spec.ToRepo.Path), co)
 		if err != nil {
-			return err
+			return fmt.Errorf("unable to load ignore target files: %w", err)
 		}
 
 		if err := loadIgnoreFileEventually(co); err != nil {
@@ -275,25 +282,25 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 
 		createRenderFuncs(co, values)
 
-		toPath := helpers.String(spec.ToRepo.Path)
+		toPath := ptr.StringFromPtr(spec.ToRepo.Path)
 		if len(toPath) == 0 {
 			toPath = "/"
 		}
 
 		if err := co.copyDir(fromPath, toPath); err != nil {
-			return err
+			return fmt.Errorf("unable to copy files: %w", err)
 		}
 	}
 
 	e.log.Debug("Origin and target repo synchronized",
 		"fromUrl", spec.FromRepo.Url,
 		"toUrl", spec.ToRepo.Url,
-		"fromPath", helpers.String(spec.FromRepo.Path),
-		"toPath", helpers.String(spec.ToRepo.Path))
+		"fromPath", ptr.StringFromPtr(spec.FromRepo.Path),
+		"toPath", ptr.StringFromPtr(spec.ToRepo.Path))
 	e.rec.Eventf(cr, corev1.EventTypeNormal, "RepoSyncSuccess",
 		"Origin and target repo synchronized")
 
-	toPath := helpers.String(spec.ToRepo.Path)
+	toPath := ptr.StringFromPtr(spec.ToRepo.Path)
 	toRepoCommitId, err := toRepo.Commit(".", commitMessage, &git.IndexOptions{
 		OriginRepo: fromRepo,
 		FromPath:   fromPath,
@@ -309,10 +316,10 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 			fmt.Sprintf("Target repo already up-to-date on branch %s", toRepo.CurrentBranch()))
 
 		meta.SetExternalName(cr, toRepoCommitId)
-		cr.Status.OriginCommitId = helpers.StringPtr(fromRepoCommitId)
-		cr.Status.TargetCommitId = helpers.StringPtr(toRepoCommitId)
-		cr.Status.TargetBranch = helpers.StringPtr(toRepo.CurrentBranch())
-		cr.Status.OriginBranch = helpers.StringPtr(fromRepo.CurrentBranch())
+		cr.Status.OriginCommitId = ptr.PtrTo(fromRepoCommitId)
+		cr.Status.TargetCommitId = ptr.PtrTo(toRepoCommitId)
+		cr.Status.TargetBranch = ptr.PtrTo(toRepo.CurrentBranch())
+		cr.Status.OriginBranch = ptr.PtrTo(fromRepo.CurrentBranch())
 
 		err = e.kube.Status().Update(ctx, cr)
 		if err != nil {
@@ -328,17 +335,17 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 
 	err = toRepo.Push("origin", toRepo.CurrentBranch(), e.cfg.Insecure)
 	if err != nil {
-		return err
+		return fmt.Errorf("unable to push target repo: %w", err)
 	}
 	e.log.Debug("Target repo pushed", "branch", toRepo.CurrentBranch(), "commitId", toRepoCommitId)
 	e.rec.Eventf(cr, corev1.EventTypeNormal, "RepoPushSuccess",
 		fmt.Sprintf("Target repo pushed branch %s", toRepo.CurrentBranch()))
 
 	meta.SetExternalName(cr, toRepoCommitId)
-	cr.Status.OriginCommitId = helpers.StringPtr(fromRepoCommitId)
-	cr.Status.TargetCommitId = helpers.StringPtr(toRepoCommitId)
-	cr.Status.TargetBranch = helpers.StringPtr(toRepo.CurrentBranch())
-	cr.Status.OriginBranch = helpers.StringPtr(fromRepo.CurrentBranch())
+	cr.Status.OriginCommitId = ptr.PtrTo(fromRepoCommitId)
+	cr.Status.TargetCommitId = ptr.PtrTo(toRepoCommitId)
+	cr.Status.TargetBranch = ptr.PtrTo(toRepo.CurrentBranch())
+	cr.Status.OriginBranch = ptr.PtrTo(fromRepo.CurrentBranch())
 	err = e.kube.Status().Update(ctx, cr)
 	if err != nil {
 		return fmt.Errorf("unable to update status: %w", err)

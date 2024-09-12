@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: filename-replace-values
+
+data:
+  values: |
+    { 
+      "organizationName": "krateo",
+      "repositoryName": "testfilename",
+      "serviceType": "type",
+      "servicePort": "8080",
+      "testTemplate": "tplKrateo"
+    }

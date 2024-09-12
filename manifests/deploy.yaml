@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: git-provider
+  namespace: demo-system
+  labels:
+    git-provider: "true"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      git-provider: "true"
+  template:
+    metadata:
+      labels:
+        git-provider: "true"
+    spec:
+      serviceAccountName: git-provider
+      containers:
+      - name: git-provider
+        image: kind.local/git-provider:latest
+        imagePullPolicy: Never
+        args:
+          - --debug
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          runAsNonRoot: true
+          runAsUser: 1000

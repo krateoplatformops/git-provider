@@ -41,7 +41,7 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 		Named(name).
 		WithOptions(o.ForControllerRuntime()).
 		For(&repov1alpha1.Repo{}).
-		Complete(ratelimiter.NewReconciler(name, r, o.GlobalRateLimiter))
+		Complete(ratelimiter.New(name, r, o.GlobalRateLimiter))
 }
 
 type connector struct {

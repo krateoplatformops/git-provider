@@ -8,31 +8,31 @@ spec:
     key: values
     name: filename-replace-values
     namespace: default
-  deletionPolicy: Delete
   fromRepo:
     authMethod: generic
     branch: main
-    path: skeleton/
+    path: skeleton
     usernameRef:
       key: username
-      name: gh-sella-user
+      name: git-username
       namespace: default
     secretRef:
       key: token
-      name: sella
+      name: git-secret
       namespace: default
     url: https://github.com/matteogastaldello/fromRepo
   toRepo:
     authMethod: generic
-    branch: test-5
-    # cloneFromBranch: 
-    usernameRef:
-      key: username
-      name: gh-azure-user
-      namespace: default
+    branch: main
+    cloneFromBranch: main
+    path: /
     secretRef:
       key: token
-      name: azure-pwd
+      name: git-secret
+      namespace: default
+    usernameRef:
+      key: username
+      name: git-username
       namespace: default
     url: https://matteogastaldello-org@dev.azure.com/matteogastaldello-org/teamproject/_git/repo-generated
   unsupportedCapabilities: true

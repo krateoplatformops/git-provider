@@ -6,12 +6,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/cbroglie/mustache"
-	"github.com/go-git/go-billy/v5"
-	"github.com/go-git/go-git/v5/plumbing/transport"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	repov1alpha1 "github.com/krateoplatformops/git-provider/apis/repo/v1alpha1"
-	"github.com/krateoplatformops/provider-runtime/pkg/helpers"
+
+	"github.com/cbroglie/mustache"
+	"github.com/go-git/go-billy/v5"
+	"github.com/go-git/go-git/plumbing/transport"
+	"github.com/krateoplatformops/git-provider/internal/ptr"
 	"github.com/krateoplatformops/provider-runtime/pkg/resource"
 	"github.com/pkg/errors"
 	gi "github.com/sabhiram/go-gitignore"
@@ -55,8 +56,8 @@ func loadExternalClientOpts(ctx context.Context, kc client.Client, cr *repov1alp
 	// fmt.Println("ToRepoCookieFile", string(toRepoCookie))
 
 	return &externalClientOpts{
-		Insecure:                helpers.Bool(cr.Spec.Insecure),
-		UnsupportedCapabilities: helpers.Bool(cr.Spec.UnsupportedCapabilities),
+		Insecure:                ptr.BoolFromPtr(cr.Spec.Insecure),
+		UnsupportedCapabilities: ptr.BoolFromPtr(cr.Spec.UnsupportedCapabilities),
 		FromRepoCreds:           fromRepoCreds,
 		ToRepoCreds:             toRepoCreds,
 		FromRepoCookieFile:      fromRepoCookie,
@@ -85,7 +86,7 @@ func getRepoCredentials(ctx context.Context, k client.Client, opts repov1alpha1.
 		return nil, err
 	}
 
-	authMethod := helpers.String(opts.AuthMethod)
+	authMethod := ptr.StringFromPtr(opts.AuthMethod)
 	if strings.EqualFold(authMethod, "bearer") {
 		return &githttp.TokenAuth{
 			Token: token,

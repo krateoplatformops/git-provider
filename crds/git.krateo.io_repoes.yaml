@@ -82,19 +82,28 @@ spec:
                 - namespace
                 type: object
               enableUpdate:
-                description: 'Enable sync with origin repo. Target repo will be reconciled
-                  the changes on origin - experimental (default: false)'
+                default: false
+                description: 'EnableUpdate: If `true`, the provider performs updates
+                  on the repository specified in `toRepo` when newer commits are retrieved
+                  from `fromRepo`'
                 type: boolean
               fromRepo:
                 description: 'FromRepo: repo origin to copy from'
                 properties:
                   authMethod:
+                    default: generic
                     description: |-
-                      AuthMethod defines the authentication mode. One of 'basic' or 'bearer' or 'cookiefile'.
+                      AuthMethod: Possible values are: `generic`, `bearer`, `gitcookies`. `generic` requires  `secretRef` and `usernameRef`; `generic` requires only `secretRef`; `cookiefile` requires only `secretRef`
                       In case of 'cookiefile' the secretRef must contain a file with the cookie.
+                    enum:
+                    - generic
+                    - bearer
+                    - cookiefile
                     type: string
                   branch:
-                    description: 'Branch: in the git repository to copy from (or to).'
+                    description: 'Branch: if in spec.fromRepo, the branch to copy
+                      from. If in spec.toRepo, represents the branch to populate;
+                      If the branch does not exist on remote is created by the provider.'
                     type: string
                   cloneFromBranch:
                     description: |-
@@ -103,13 +112,15 @@ spec:
                       - If the parameter is not set, the branch is created empty and has no parents (no history) - `git switch --orphan branch-name`
                     type: string
                   path:
-                    description: |-
-                      Path: name of the folder in the git repository
-                      to copy from (or to).
+                    default: /
+                    description: 'Path: if in spec.fromRepo, Represents the folder
+                      to clone from. If not set the entire repository is cloned. If
+                      in spec.toRepo, represents the folder to use as destination.'
                     type: string
                   secretRef:
-                    description: 'SecretRef: holds token required to git server authentication
-                      or cookie file in case of ''cookiefile'' authMethod.'
+                    description: 'SecretRef: reference to a secret that contains token
+                      required to git server authentication or cookie file in case
+                      of ''cookiefile'' authMethod.'
                     properties:
                       key:
                         description: The key to select.
@@ -126,12 +137,13 @@ spec:
                     - namespace
                     type: object
                   url:
-                    description: 'Url: the repository URL.'
+                    description: 'Url: url of the remote repository'
                     type: string
                   usernameRef:
                     description: 'UsernameRef: holds username required to git server
-                      authentication. - If ''authMethod'' is ''bearer'' the field
-                      is ignored. If the field is not set, username is setted as ''krateoctl'''
+                      authentication. - If ''authMethod'' is ''bearer'' or ''cookiefile''
+                      the field is ignored. If the field is not set, username is setted
+                      as ''krateoctl'''
                     properties:
                       key:
                         description: The key to select.
@@ -153,19 +165,26 @@ spec:
                 - url
                 type: object
               insecure:
-                description: 'Insecure is useful with hand made SSL certs (default:
-                  false)'
+                description: 'Insecure: Insecure is useful with hand made SSL certs
+                  (default: false)'
                 type: boolean
               toRepo:
                 description: 'ToRepo: repo destination to copy to'
                 properties:
                   authMethod:
+                    default: generic
                     description: |-
-                      AuthMethod defines the authentication mode. One of 'basic' or 'bearer' or 'cookiefile'.
+                      AuthMethod: Possible values are: `generic`, `bearer`, `gitcookies`. `generic` requires  `secretRef` and `usernameRef`; `generic` requires only `secretRef`; `cookiefile` requires only `secretRef`
                       In case of 'cookiefile' the secretRef must contain a file with the cookie.
+                    enum:
+                    - generic
+                    - bearer
+                    - cookiefile
                     type: string
                   branch:
-                    description: 'Branch: in the git repository to copy from (or to).'
+                    description: 'Branch: if in spec.fromRepo, the branch to copy
+                      from. If in spec.toRepo, represents the branch to populate;
+                      If the branch does not exist on remote is created by the provider.'
                     type: string
                   cloneFromBranch:
                     description: |-
@@ -174,13 +193,15 @@ spec:
                       - If the parameter is not set, the branch is created empty and has no parents (no history) - `git switch --orphan branch-name`
                     type: string
                   path:
-                    description: |-
-                      Path: name of the folder in the git repository
-                      to copy from (or to).
+                    default: /
+                    description: 'Path: if in spec.fromRepo, Represents the folder
+                      to clone from. If not set the entire repository is cloned. If
+                      in spec.toRepo, represents the folder to use as destination.'
                     type: string
                   secretRef:
-                    description: 'SecretRef: holds token required to git server authentication
-                      or cookie file in case of ''cookiefile'' authMethod.'
+                    description: 'SecretRef: reference to a secret that contains token
+                      required to git server authentication or cookie file in case
+                      of ''cookiefile'' authMethod.'
                     properties:
                       key:
                         description: The key to select.
@@ -197,12 +218,13 @@ spec:
                     - namespace
                     type: object
                   url:
-                    description: 'Url: the repository URL.'
+                    description: 'Url: url of the remote repository'
                     type: string
                   usernameRef:
                     description: 'UsernameRef: holds username required to git server
-                      authentication. - If ''authMethod'' is ''bearer'' the field
-                      is ignored. If the field is not set, username is setted as ''krateoctl'''
+                      authentication. - If ''authMethod'' is ''bearer'' or ''cookiefile''
+                      the field is ignored. If the field is not set, username is setted
+                      as ''krateoctl'''
                     properties:
                       key:
                         description: The key to select.
@@ -224,11 +246,10 @@ spec:
                 - url
                 type: object
               unsupportedCapabilities:
-                description: |-
-                  UnsupportedCapabilities enable Go-Git transport.UnsupportedCapabilities (default: false)
-                  Azure DevOps requires capabilities multi_ack / multi_ack_detailed,
-                  which are not fully implemented in go-git library and by default
-                  are included in transport.UnsupportedCapabilities.
+                default: false
+                description: 'UnsupportedCapabilities: If `true` [capabilities not
+                  supported by any client implementation](https://github.com/go-git/go-git/blob/4fd9979d5c2940e72bdd6946fec21e02d959f0f6/plumbing/transport/common.go#L310)
+                  will not be used by the provider'
                 type: boolean
             required:
             - fromRepo

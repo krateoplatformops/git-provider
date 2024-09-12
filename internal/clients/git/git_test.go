@@ -1,100 +1,159 @@
-//go:build integration
-// +build integration
-
 package git
 
 import (
-	"io"
 	"os"
-	"strings"
 	"testing"
 
-	"github.com/go-git/go-git/v5/plumbing/transport/http"
-	"github.com/lucasepe/dotenv"
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestClone(t *testing.T) {
-	setEnv()
+func TestIsInGitCommitHistory(t *testing.T) {
 
-	repo, err := Clone(CloneOptions{
-		URL: os.Getenv("URL"),
-		Auth: &http.BasicAuth{
-			Username: "krateoctl",
-			Password: os.Getenv("TOKEN"),
-		},
-		Insecure:                true,
-		UnsupportedCapabilities: true,
-	})
-	if err != nil {
-		t.Fatal(err)
+	baseRepo := BaseSuite{}
+	baseRepo.BuildBasicRepository()
+
+	opts := ListOptions{
+		URL: baseRepo.GetBasicLocalRepositoryURL(),
 	}
 
-	all, err := repo.FS().ReadDir("/")
+	hash := "0123456789abcdef0123456789abcdef01234567"
+
+	exists, err := IsInGitCommitHistory(opts, hash)
 	if err != nil {
-		t.Fatal(err)
+		t.Errorf("Error checking commit history: %v", err)
 	}
 
-	for _, el := range all {
-		t.Log(el.Name())
+	if exists {
+		t.Logf("Commit %s exists in the Git repository", hash)
+	} else {
+		t.Logf("Commit %s does not exist in the Git repository", hash)
 	}
 }
 
-func TestWriteBytes(t *testing.T) {
-	setEnv()
+func TestGetLatestCommitRemote(t *testing.T) {
+	baseRepo := BaseSuite{}
+	baseRepo.BuildBasicRepository()
 
 	repo, err := Clone(CloneOptions{
-		URL: os.Getenv("URL"),
-		Auth: &http.BasicAuth{
-			Username: "krateoctl",
-			Password: os.Getenv("TOKEN"),
-		},
-		Insecure:                true,
-		UnsupportedCapabilities: true,
+		URL: baseRepo.GetBasicLocalRepositoryURL(),
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
-	out, err := repo.FS().Create("JUST_TO_TEST_A_ISSUE.md")
-	if err != nil {
-		t.Fatal(err)
-	}
+	_, err = repo.FS().OpenFile("README.md", os.O_RDWR|os.O_CREATE, 0644)
+	require.NoError(t, err)
 
-	defer func() {
-		if e := out.Close(); e != nil {
-			err = e
-		}
-	}()
+	commit, err := GetLatestCommitRemote(ListOptions{
+		URL:    baseRepo.GetBasicLocalRepositoryURL(),
+		Branch: "master",
+	})
+	require.NoError(t, err)
+	expected := "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"
+	assert.Equal(t, expected, *commit)
 
-	in := strings.NewReader("Please be patient...")
-	if _, err = io.Copy(out, in); err != nil {
-		t.Fatal(err)
-	}
-
-	all, err := repo.FS().ReadDir("/")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	for _, el := range all {
-		t.Log(el.Name())
-	}
-
-	t.Logf("current branch: %s", repo.CurrentBranch())
-
-	commitId, err := repo.Commit(".", "first commit")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("commitId: %s", commitId)
-
-	err = repo.Push("origin", repo.CurrentBranch(), true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	commit, err = GetLatestCommitRemote(ListOptions{
+		URL:    baseRepo.GetBasicLocalRepositoryURL(),
+		Branch: "branch",
+	})
+	require.NoError(t, err)
+	expected = "e8d3ffab552895c19b9fcf7aa264d277cde33881"
+	assert.Equal(t, expected, *commit)
 }
 
-func setEnv() {
-	env, _ := dotenv.FromFile("../../../.env")
-	dotenv.PutInEnv(env, false)
+func TestPush(t *testing.T) {
+	baseRepo := BaseSuite{}
+	baseRepo.BuildBasicRepository()
+
+	repo, err := Clone(CloneOptions{
+		URL: baseRepo.GetBasicLocalRepositoryURL(),
+	})
+	require.NoError(t, err)
+
+	err = repo.Push("origin", "master", false)
+	require.ErrorIs(t, err, git.NoErrAlreadyUpToDate)
+
+	_, err = repo.FS().OpenFile("README.md", os.O_RDWR|os.O_CREATE, 0644)
+	require.NoError(t, err)
+
+	repo.storer.IndexStorage = memory.IndexStorage{}
+	_, err = repo.Commit(".", "Initial commit", &IndexOptions{
+		OriginRepo: repo,
+		FromPath:   "/",
+		ToPath:     "/",
+	})
+	require.NoError(t, err)
+
+	err = repo.Push("origin", "test", false)
+	require.NoError(t, err)
+}
+
+func TestPull(t *testing.T) {
+	baseRepo := BaseSuite{}
+	baseRepo.BuildBasicRepository()
+
+	repo, err := Clone(CloneOptions{
+		URL:    baseRepo.GetBasicLocalRepositoryURL(),
+		Branch: "master",
+	})
+	require.NoError(t, err)
+
+	err = Pull(repo, false)
+	require.NoError(t, err)
+}
+
+func TestBranch(t *testing.T) {
+	baseRepo := BaseSuite{}
+	baseRepo.BuildBasicRepository()
+
+	repo, err := Clone(CloneOptions{
+		URL:    baseRepo.GetBasicLocalRepositoryURL(),
+		Branch: "master",
+	})
+	require.NoError(t, err)
+
+	err = repo.Branch("test", &CreateOpt{
+		Create: true,
+		Orphan: false,
+	})
+	require.NoError(t, err)
+
+	err = repo.Branch("test-orphan", &CreateOpt{
+		Create: true,
+		Orphan: true,
+	})
+	require.NoError(t, err)
+
+	err = repo.Branch("test", nil)
+	require.NoError(t, err)
+}
+
+func TestCurrentBranch(t *testing.T) {
+	baseRepo := BaseSuite{}
+	baseRepo.BuildBasicRepository()
+
+	repo, err := Clone(CloneOptions{
+		URL:    baseRepo.GetBasicLocalRepositoryURL(),
+		Branch: "master",
+	})
+	require.NoError(t, err)
+
+	branch := repo.CurrentBranch()
+	assert.Equal(t, "master", branch)
+}
+
+func TestGetLatestCommit(t *testing.T) {
+	baseRepo := BaseSuite{}
+	baseRepo.BuildBasicRepository()
+
+	repo, err := Clone(CloneOptions{
+		URL: baseRepo.GetBasicLocalRepositoryURL(),
+	})
+	require.NoError(t, err)
+
+	commit, err := repo.GetLatestCommit("master")
+	require.NoError(t, err)
+	expected := "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"
+	assert.Equal(t, expected, commit)
 }

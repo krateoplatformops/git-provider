@@ -1,0 +1,7 @@
+# sample regex patterns
+ignore:
+  - "internal/controllers/repo/repo.go"
+  - "internal/controllers/repo/setup.go"
+  - "internal/controllers/git.go"
+  - "apis"
+  - "cmd/*.go"

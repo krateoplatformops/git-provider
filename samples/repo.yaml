@@ -1,8 +1,9 @@
 apiVersion: git.krateo.io/v1alpha1
 kind: Repo
 metadata:
-  name: git-user
+  name: git-azuredevops-branch-5
 spec:
+  enableUpdate: false
   configMapKeyRef:
     key: values
     name: filename-replace-values
@@ -33,5 +34,5 @@ spec:
       key: username
       name: git-username
       namespace: default
-    url: https://github.com/matteogastaldello/toRepo
+    url: https://matteogastaldello-org@dev.azure.com/matteogastaldello-org/teamproject/_git/repo-generated
   unsupportedCapabilities: true

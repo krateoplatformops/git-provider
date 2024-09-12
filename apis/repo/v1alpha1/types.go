@@ -8,28 +8,30 @@ import (
 )
 
 type RepoOpts struct {
-	// Url: the repository URL.
+	// Url: url of the remote repository
 	// +immutable
 	Url string `json:"url"`
 
-	// Path: name of the folder in the git repository
-	// to copy from (or to).
+	// Path: if in spec.fromRepo, Represents the folder to clone from. If not set the entire repository is cloned. If in spec.toRepo, represents the folder to use as destination.
+	// +kubebuilder:default:="/"
 	// +optional
 	Path *string `json:"path,omitempty"`
 
-	// Branch: in the git repository to copy from (or to).
+	// Branch: if in spec.fromRepo, the branch to copy from. If in spec.toRepo, represents the branch to populate; If the branch does not exist on remote is created by the provider.
 	// +required
 	Branch *string `json:"branch"`
 
-	// SecretRef: holds token required to git server authentication or cookie file in case of 'cookiefile' authMethod.
+	// SecretRef: reference to a secret that contains token required to git server authentication or cookie file in case of 'cookiefile' authMethod.
 	SecretRef *commonv1.SecretKeySelector `json:"secretRef"`
 
-	// UsernameRef: holds username required to git server authentication. - If 'authMethod' is 'bearer' the field is ignored. If the field is not set, username is setted as 'krateoctl'
+	// UsernameRef: holds username required to git server authentication. - If 'authMethod' is 'bearer' or 'cookiefile' the field is ignored. If the field is not set, username is setted as 'krateoctl'
 	// +optional
 	UsernameRef *commonv1.SecretKeySelector `json:"usernameRef"`
 
-	// AuthMethod defines the authentication mode. One of 'basic' or 'bearer' or 'cookiefile'.
+	// AuthMethod: Possible values are: `generic`, `bearer`, `gitcookies`. `generic` requires  `secretRef` and `usernameRef`; `generic` requires only `secretRef`; `cookiefile` requires only `secretRef`
 	// In case of 'cookiefile' the secretRef must contain a file with the cookie.
+	// +kubebuilder:validation:Enum=generic;bearer;cookiefile
+	// +kubebuilder:default:=generic
 	// +optional
 	AuthMethod *string `json:"authMethod,omitempty"`
 
@@ -56,18 +58,17 @@ type RepoSpec struct {
 	// +optional
 	ConfigMapKeyRef *commonv1.ConfigMapKeySelector `json:"configMapKeyRef,omitempty"`
 
-	// Insecure is useful with hand made SSL certs (default: false)
+	// Insecure: Insecure is useful with hand made SSL certs (default: false)
 	// +optional
 	Insecure *bool `json:"insecure,omitempty"`
 
-	// UnsupportedCapabilities enable Go-Git transport.UnsupportedCapabilities (default: false)
-	// Azure DevOps requires capabilities multi_ack / multi_ack_detailed,
-	// which are not fully implemented in go-git library and by default
-	// are included in transport.UnsupportedCapabilities.
+	// UnsupportedCapabilities: If `true` [capabilities not supported by any client implementation](https://github.com/go-git/go-git/blob/4fd9979d5c2940e72bdd6946fec21e02d959f0f6/plumbing/transport/common.go#L310) will not be used by the provider
 	// +optional
+	// +kubebuilder:default:=false
 	UnsupportedCapabilities *bool `json:"unsupportedCapabilities,omitempty"`
 
-	// Enable sync with origin repo. Target repo will be reconciled the changes on origin - experimental (default: false)
+	// EnableUpdate: If `true`, the provider performs updates on the repository specified in `toRepo` when newer commits are retrieved from `fromRepo`
+	// +kubebuilder:default:=false
 	// +optional
 	EnableUpdate *bool `json:"enableUpdate,omitempty"`
 }

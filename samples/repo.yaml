@@ -1,7 +1,7 @@
 apiVersion: git.krateo.io/v1alpha1
 kind: Repo
 metadata:
-  name: git-azuredevops-branch-5
+  name: test-repo
 spec:
   enableUpdate: false
   configMapKeyRef:
@@ -20,7 +20,7 @@ spec:
       key: token
       name: git-secret
       namespace: default
-    url: https://github.com/matteogastaldello/fromRepo
+    url: https://github.com/your-org/fromRepo
   toRepo:
     authMethod: generic
     branch: main
@@ -34,5 +34,5 @@ spec:
       key: username
       name: git-username
       namespace: default
-    url: https://matteogastaldello-org@dev.azure.com/matteogastaldello-org/teamproject/_git/repo-generated
+    url: https://github.com/your-org/toRepo
   unsupportedCapabilities: true

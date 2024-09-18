@@ -27,47 +27,76 @@ $ helm repo update krateo
 $ helm install git-provider krateo/git-provider
 ```
 
-### Manifest application
+### Manifest Application
 
+As a first step, you need to create a [`kind: Repo` Manifest](#repo-manifest) as shown below and a [ConfigMap](#configmap-manifest) which will contain the templating values.
+
+### File Templating
+`git-provider` uses the Mustache library ([see custom delimiter reference](https://github.com/janl/mustache.js/?tab=readme-ov-file#setting-in-templates)) to apply templating. Therefore, you need to specify the custom delimiter you want to use in the first line of the file you want to template. You can see an example [here](https://github.com/krateoplatformops/krateo-v2-template-fireworksapp/blob/5dee9fe1d2de3785eb7e6374ad50e3f8e7b12907/skeleton/chart/values.yaml#L1C1-L1C14).
+
+### File Name Templating
+If you need to template the filename of a file, you can only use the delimiters `{{ }}` (e.g., `{{ your-prop }}.yaml`).
+
+#### Repo Manifest
 ```yaml
 apiVersion: git.krateo.io/v1alpha1
 kind: Repo
 metadata:
-  name: git-azuredevops-branch-5
+  name: test-repo
 spec:
-  enableUpdate: false 
+  enableUpdate: false
   configMapKeyRef:
     key: values
     name: filename-replace-values
     namespace: default
-  deletionPolicy: Delete
   fromRepo:
-    authMethod: generic 
+    authMethod: generic
     branch: main
-    path: skeleton/
+    path: skeleton
     usernameRef:
       key: username
-      name: github-user
+      name: git-username
       namespace: default
     secretRef:
       key: token
-      name: github-token
+      name: git-secret
       namespace: default
-    url: https://github.com/matteogastaldello/fromRepo
+    url: https://github.com/your-organization/fromRepo
   toRepo:
     authMethod: generic
-    branch: test-5
-    usernameRef:
-      key: username
-      name: azure-user
-      namespace: default
+    branch: main
+    cloneFromBranch: main
+    path: /
     secretRef:
       key: token
-      name: azure-token
+      name: git-secret
       namespace: default
-    url: https://matteogastaldello-org@dev.azure.com/matteogastaldello-org/teamproject/_git/repo-generated
+    usernameRef:
+      key: username
+      name: git-username
+      namespace: default
+    url: https://github.com/your-organization/toRepo
   unsupportedCapabilities: true
 ```
+
+#### Configmap Manifest
+```yaml 
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: filename-replace-values
+data:
+  values: |
+    { 
+      "organizationName": "krateo",
+      "repositoryName": "testfilename",
+      "serviceType": "type",
+      "servicePort": "8080",
+      "testTemplate": "tplKrateo"
+    }
+```
+
+
 
 ## Configuration
 To view the CR configuration visit [this link](https://doc.crds.dev/github.com/krateoplatformops/git-provider).

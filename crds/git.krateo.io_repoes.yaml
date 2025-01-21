@@ -15,7 +15,7 @@ spec:
     listKind: RepoList
     plural: repoes
     singular: repo
-  scope: Cluster
+  scope: Namespaced
   versions:
   - additionalPrinterColumns:
     - jsonPath: .status.originCommitId

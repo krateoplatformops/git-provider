@@ -11,7 +11,6 @@ import (
 )
 
 func TestIsInGitCommitHistory(t *testing.T) {
-
 	baseRepo := BaseSuite{}
 	baseRepo.BuildBasicRepository()
 

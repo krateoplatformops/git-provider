@@ -150,8 +150,9 @@ func TestLoadIgnoreTargetFiles(t *testing.T) {
 
 	co := newCopier(origin, target, "/", "/")
 
-	srcPath := "/path/to/source"
+	srcPath := "/path/to/dir"
 
+	co.toRepo.FS().MkdirAll("/path/to/dir", 0755)
 	err = loadIgnoreTargetFiles(srcPath, co)
 	require.NoError(t, err)
 

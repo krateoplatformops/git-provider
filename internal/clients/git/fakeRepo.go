@@ -3,14 +3,14 @@ package git
 import (
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
-	fixtures "github.com/go-git/go-git-fixtures/v5"
+	fixtures "github.com/go-git/go-git-fixtures/v4"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 )
 
 type BaseSuite struct {
-	fixtures.Fixture
+	fixtures.Suite
 	Repository *git.Repository
 	cache      map[string]*git.Repository
 }

@@ -127,10 +127,6 @@ func (e *external) Observe(ctx context.Context, mg resource.Managed) (reconciler
 
 	cr.Status.SetConditions(commonv1.Available())
 
-	// err = e.kube.Status().Update(context.TODO(), cr)
-	// if err != nil {
-	// 	return reconciler.ExternalObservation{}, fmt.Errorf("unable to update status: %w", err)
-	// }
 	return reconciler.ExternalObservation{
 		ResourceExists:   true,
 		ResourceUpToDate: true,
@@ -210,8 +206,6 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 
 	spec := cr.Spec.DeepCopy()
 
-	// fmt.Println("ToRepoCookieFile", string(e.cfg.ToRepoCookieFile))
-
 	toRepo, err := git.Clone(git.CloneOptions{
 		URL:                     spec.ToRepo.Url,
 		Auth:                    e.cfg.ToRepoCreds,
@@ -222,7 +216,7 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 		GitCookies:              e.cfg.ToRepoCookieFile,
 	})
 	if err != nil {
-		return errors.Wrapf(err, "cloning toRepo: %s", spec.ToRepo.Url)
+		return fmt.Errorf("cloning toRepo: %w", err)
 	}
 	e.log.Debug("Target repo cloned", "url", spec.ToRepo.Url)
 	e.rec.Eventf(cr, corev1.EventTypeNormal, "TargetRepoCloned",
@@ -238,7 +232,7 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 		GitCookies:              e.cfg.FromRepoCookieFile,
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("cloning fromRepo: %w", err)
 	}
 	e.log.Debug("Origin repo cloned", "url", spec.FromRepo.Url)
 	e.rec.Eventf(cr, corev1.EventTypeNormal, "OriginRepoCloned",
@@ -255,19 +249,22 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 	// If fromPath is not specified DON'T COPY!
 	fromPath := ptr.StringFromPtr(spec.FromRepo.Path)
 	if len(fromPath) > 0 {
-		values, err := e.loadValuesFromConfigMap(ctx, spec.ConfigMapKeyRef)
-		if err != nil {
-			e.log.Debug("Unable to load configmap with template data", "msg", err.Error())
-			e.rec.Eventf(cr, corev1.EventTypeWarning, "CannotLoadConfigMap",
-				"Unable to load configmap with template data: %s", err.Error())
-		}
+		var values map[string]interface{}
+		if spec.ConfigMapKeyRef != nil {
+			values, err = e.loadValuesFromConfigMap(ctx, spec.ConfigMapKeyRef)
+			if err != nil {
+				e.log.Debug("Unable to load configmap with template data", "msg", err.Error())
+				e.rec.Eventf(cr, corev1.EventTypeWarning, "CannotLoadConfigMap",
+					"Unable to load configmap with template data: %s", err.Error())
+			}
 
-		e.log.Debug("Loaded values from config map",
-			"name", spec.ConfigMapKeyRef.Name,
-			"key", spec.ConfigMapKeyRef.Key,
-			"namespace", spec.ConfigMapKeyRef.Namespace,
-			"values", values,
-		)
+			e.log.Debug("Loaded values from config map",
+				"name", spec.ConfigMapKeyRef.Name,
+				"key", spec.ConfigMapKeyRef.Key,
+				"namespace", spec.ConfigMapKeyRef.Namespace,
+				"values", values,
+			)
+		}
 
 		err = loadIgnoreTargetFiles(ptr.StringFromPtr(spec.ToRepo.Path), co)
 		if err != nil {
@@ -280,7 +277,9 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 				"Unable to load '.krateoignore' file: %s", err.Error())
 		}
 
-		createRenderFuncs(co, values)
+		if values != nil {
+			createRenderFuncs(co, values)
+		}
 
 		toPath := ptr.StringFromPtr(spec.ToRepo.Path)
 		if len(toPath) == 0 {

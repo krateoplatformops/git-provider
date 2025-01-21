@@ -1,11 +1,12 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
+	"strconv"
+	"time"
 
-	"gopkg.in/alecthomas/kingpin.v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -28,44 +29,27 @@ const (
 func main() {
 	envVarPrefix := fmt.Sprintf("%s_PROVIDER", strcase.UpperSnakeCase(providerName))
 
-	var (
-		app = kingpin.New(filepath.Base(os.Args[0]), fmt.Sprintf("Krateo %s Provider.", providerName)).
-			DefaultEnvars()
-		debug = app.Flag("debug", "Run with debug logging.").Short('d').
-			OverrideDefaultFromEnvar(fmt.Sprintf("%s_DEBUG", envVarPrefix)).
-			Bool()
-		syncPeriod = app.Flag("sync", "Controller manager sync period such as 300ms, 1.5h, or 2h45m").Short('s').
-				Default("1h").
-				Duration()
-		pollInterval = app.Flag("poll", "Poll interval controls how often an individual resource should be checked for drift.").
-				Default("2m").
-				OverrideDefaultFromEnvar(fmt.Sprintf("%s_POLL_INTERVAL", envVarPrefix)).
-				Duration()
-		maxReconcileRate = app.Flag("max-reconcile-rate", "The global maximum rate per second at which resources may checked for drift from the desired state.").
-					Default("5").
-					OverrideDefaultFromEnvar(fmt.Sprintf("%s_MAX_RECONCILE_RATE", envVarPrefix)).
-					Int()
-		leaderElection = app.Flag("leader-election", "Use leader election for the controller manager.").
-				Short('l').
-				Default("false").
-				OverrideDefaultFromEnvar(fmt.Sprintf("%s_LEADER_ELECTION", envVarPrefix)).
-				Bool()
-	)
-	kingpin.MustParse(app.Parse(os.Args[1:]))
+	debug := flag.Bool("debug", getEnvBool(fmt.Sprintf("%s_DEBUG", envVarPrefix), false), "Run with debug logging.")
+	syncPeriod := flag.Duration("sync", getEnvDuration(fmt.Sprintf("%s_SYNC_PERIOD", envVarPrefix), time.Hour), "Controller manager sync period such as 300ms, 1.5h, or 2h45m")
+	pollInterval := flag.Duration("poll", getEnvDuration(fmt.Sprintf("%s_POLL_INTERVAL", envVarPrefix), 2*time.Minute), "Poll interval controls how often an individual resource should be checked for drift.")
+	maxReconcileRate := flag.Int("max-reconcile-rate", getEnvInt(fmt.Sprintf("%s_MAX_RECONCILE_RATE", envVarPrefix), 5), "The global maximum rate per second at which resources may be checked for drift from the desired state.")
+	leaderElection := flag.Bool("leader-election", getEnvBool(fmt.Sprintf("%s_LEADER_ELECTION", envVarPrefix), false), "Use leader election for the controller manager.")
+
+	flag.Parse()
 
 	zl := zap.New(zap.UseDevMode(*debug))
 	log := logging.NewLogrLogger(zl.WithName(fmt.Sprintf("%s-provider", strcase.KebabCase(providerName))))
 	if *debug {
-		// The controller-runtime runs with a no-op logger by default. It is
-		// *very* verbose even at info level, so we only provide it a real
-		// logger when we're running in debug mode.
 		ctrl.SetLogger(zl)
 	}
 
 	log.Debug("Starting", "sync-period", syncPeriod.String())
 
 	cfg, err := ctrl.GetConfig()
-	kingpin.FatalIfError(err, "Cannot get API server rest config")
+	if err != nil {
+		log.Info("Cannot get API server rest config, trying in-cluster config", "error", err)
+		os.Exit(1)
+	}
 
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 		LeaderElection:   *leaderElection,
@@ -77,7 +61,10 @@ func main() {
 			BindAddress: ":8080",
 		},
 	})
-	kingpin.FatalIfError(err, "Cannot create controller manager")
+	if err != nil {
+		log.Info("Trying to start metrics server", "error", err)
+		os.Exit(1)
+	}
 
 	o := controller.Options{
 		Logger:                  log,
@@ -86,7 +73,41 @@ func main() {
 		GlobalRateLimiter:       ratelimiter.NewGlobal(*maxReconcileRate),
 	}
 
-	kingpin.FatalIfError(apis.AddToScheme(mgr.GetScheme()), "Cannot add APIs to scheme")
-	kingpin.FatalIfError(github.Setup(mgr, o), "Cannot setup controllers")
-	kingpin.FatalIfError(mgr.Start(ctrl.SetupSignalHandler()), "Cannot start controller manager")
+	if err := apis.AddToScheme(mgr.GetScheme()); err != nil {
+		log.Info("Cannot add APIs to scheme", "error", err)
+		os.Exit(1)
+	}
+	if err := github.Setup(mgr, o); err != nil {
+		log.Info("Cannot setup controllers", "error", err)
+		os.Exit(1)
+	}
+	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+		log.Info("Cannot start controller manager", "error", err)
+		os.Exit(1)
+	}
+}
+
+func getEnvBool(env string, defaultVal bool) bool {
+	if val, ok := os.LookupEnv(env); ok {
+		return val == "true"
+	}
+	return defaultVal
+}
+
+func getEnvDuration(env string, defaultVal time.Duration) time.Duration {
+	if val, ok := os.LookupEnv(env); ok {
+		if duration, err := time.ParseDuration(val); err == nil {
+			return duration
+		}
+	}
+	return defaultVal
+}
+
+func getEnvInt(env string, defaultVal int) int {
+	if val, ok := os.LookupEnv(env); ok {
+		if intVal, err := strconv.Atoi(val); err == nil {
+			return intVal
+		}
+	}
+	return defaultVal
 }

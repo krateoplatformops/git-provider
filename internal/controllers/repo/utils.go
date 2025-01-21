@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"path/filepath"
 	"strings"
@@ -11,10 +12,9 @@ import (
 
 	"github.com/cbroglie/mustache"
 	"github.com/go-git/go-billy/v5"
-	"github.com/go-git/go-git/plumbing/transport"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/krateoplatformops/git-provider/internal/ptr"
 	"github.com/krateoplatformops/provider-runtime/pkg/resource"
-	"github.com/pkg/errors"
 	gi "github.com/sabhiram/go-gitignore"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -32,24 +32,24 @@ func loadExternalClientOpts(ctx context.Context, kc client.Client, cr *repov1alp
 	var fromRepoCookie, toRepoCookie []byte
 	fromRepoCreds, err := getRepoCredentials(ctx, kc, cr.Spec.FromRepo)
 	if err != nil {
-		return nil, errors.Wrapf(err, "retrieving from repo credentials")
+		return nil, fmt.Errorf("retrieving .fromRepo credentials: %w", err)
 	}
 	fromRepoCookie = nil
 	if fromRepoCreds == nil {
 		fromRepoCookie, err = getRepoCookies(ctx, kc, cr.Spec.FromRepo)
 		if err != nil {
-			return nil, errors.Wrapf(err, "retrieving from repo cookies")
+			return nil, fmt.Errorf("retrieving .fromRepo cookies: %w", err)
 		}
 	}
 
 	toRepoCreds, err := getRepoCredentials(ctx, kc, cr.Spec.ToRepo)
 	if err != nil {
-		return nil, errors.Wrapf(err, "retrieving to repo credentials")
+		return nil, fmt.Errorf("retrieving .toRepo credentials: %w", err)
 	}
 	if toRepoCreds == nil {
 		toRepoCookie, err = getRepoCookies(ctx, kc, cr.Spec.ToRepo)
 		if err != nil {
-			return nil, errors.Wrapf(err, "retrieving to repo cookies")
+			return nil, fmt.Errorf("retrieving .toRepo cookies: %w", err)
 		}
 	}
 

@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"strconv"
 	"time"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -12,6 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/krateoplatformops/git-provider/apis"
+	"github.com/krateoplatformops/plumbing/env"
 	"github.com/krateoplatformops/provider-runtime/pkg/logging"
 	"github.com/krateoplatformops/provider-runtime/pkg/ratelimiter"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -29,12 +29,13 @@ const (
 func main() {
 	envVarPrefix := fmt.Sprintf("%s_PROVIDER", strcase.UpperSnakeCase(providerName))
 
-	debug := flag.Bool("debug", getEnvBool(fmt.Sprintf("%s_DEBUG", envVarPrefix), false), "Run with debug logging.")
-	syncPeriod := flag.Duration("sync", getEnvDuration(fmt.Sprintf("%s_SYNC_PERIOD", envVarPrefix), time.Hour), "Controller manager sync period such as 300ms, 1.5h, or 2h45m")
-	pollInterval := flag.Duration("poll", getEnvDuration(fmt.Sprintf("%s_POLL_INTERVAL", envVarPrefix), 2*time.Minute), "Poll interval controls how often an individual resource should be checked for drift.")
-	maxReconcileRate := flag.Int("max-reconcile-rate", getEnvInt(fmt.Sprintf("%s_MAX_RECONCILE_RATE", envVarPrefix), 5), "The global maximum rate per second at which resources may be checked for drift from the desired state.")
-	leaderElection := flag.Bool("leader-election", getEnvBool(fmt.Sprintf("%s_LEADER_ELECTION", envVarPrefix), false), "Use leader election for the controller manager.")
-
+	debug := flag.Bool("debug", env.Bool(fmt.Sprintf("%s_DEBUG", envVarPrefix), false), "Run with debug logging.")
+	syncPeriod := flag.Duration("sync", env.Duration(fmt.Sprintf("%s_SYNC_PERIOD", envVarPrefix), time.Hour), "Controller manager sync period such as 300ms, 1.5h, or 2h45m")
+	pollInterval := flag.Duration("poll", env.Duration(fmt.Sprintf("%s_POLL_INTERVAL", envVarPrefix), 2*time.Minute), "Poll interval controls how often an individual resource should be checked for drift.")
+	maxReconcileRate := flag.Int("max-reconcile-rate", env.Int(fmt.Sprintf("%s_MAX_RECONCILE_RATE", envVarPrefix), 5), "The number of concurrent reconciles for each controller. This is the maximum number of resources that can be reconciled at the same time.")
+	leaderElection := flag.Bool("leader-election", env.Bool(fmt.Sprintf("%s_LEADER_ELECTION", envVarPrefix), false), "Use leader election for the controller manager.")
+	maxErrorRetryInterval := flag.Duration("max-error-retry-interval", env.Duration(fmt.Sprintf("%s_MAX_ERROR_RETRY_INTERVAL", envVarPrefix), 1*time.Minute), "The maximum interval between retries when an error occurs. This should be less than the half of the poll interval.")
+	minErrorRetryInterval := flag.Duration("min-error-retry-interval", env.Duration(fmt.Sprintf("%s_MIN_ERROR_RETRY_INTERVAL", envVarPrefix), 1*time.Second), "The minimum interval between retries when an error occurs. This should be less than max-error-retry-interval.")
 	flag.Parse()
 
 	zl := zap.New(zap.UseDevMode(*debug))
@@ -70,7 +71,7 @@ func main() {
 		Logger:                  log,
 		MaxConcurrentReconciles: *maxReconcileRate,
 		PollInterval:            *pollInterval,
-		GlobalRateLimiter:       ratelimiter.NewGlobal(*maxReconcileRate),
+		GlobalRateLimiter:       ratelimiter.NewGlobalExponential(*minErrorRetryInterval, *maxErrorRetryInterval),
 	}
 
 	if err := apis.AddToScheme(mgr.GetScheme()); err != nil {
@@ -85,29 +86,4 @@ func main() {
 		log.Info("Cannot start controller manager", "error", err)
 		os.Exit(1)
 	}
-}
-
-func getEnvBool(env string, defaultVal bool) bool {
-	if val, ok := os.LookupEnv(env); ok {
-		return val == "true"
-	}
-	return defaultVal
-}
-
-func getEnvDuration(env string, defaultVal time.Duration) time.Duration {
-	if val, ok := os.LookupEnv(env); ok {
-		if duration, err := time.ParseDuration(val); err == nil {
-			return duration
-		}
-	}
-	return defaultVal
-}
-
-func getEnvInt(env string, defaultVal int) int {
-	if val, ok := os.LookupEnv(env); ok {
-		if intVal, err := strconv.Atoi(val); err == nil {
-			return intVal
-		}
-	}
-	return defaultVal
 }

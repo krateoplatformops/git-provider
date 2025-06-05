@@ -15,24 +15,24 @@ spec:
     usernameRef:
       key: username
       name: git-username
-      namespace: default
+      namespace: krateo-system
     secretRef:
       key: token
-      name: git-secret
-      namespace: default
-    url: https://github.com/your-org/fromRepo
+      name: gh-sec
+      namespace: krateo-system
+    url: https://github.com/matteogastaldello/fromRepo
   toRepo:
     authMethod: generic
-    branch: main
+    branch: test
     cloneFromBranch: main
     path: /
     secretRef:
       key: token
-      name: git-secret
-      namespace: default
+      name: gh-sec
+      namespace: krateo-system
     usernameRef:
       key: username
       name: git-username
-      namespace: default
-    url: https://github.com/your-org/toRepo
+      namespace: krateo-system
+    url: https://github.com/matteogastaldello/toRepo
   unsupportedCapabilities: true

@@ -174,7 +174,7 @@ func GetLatestCommitRemote(opts ListOptions) (*string, error) {
 		}
 	}
 
-	return nil, fmt.Errorf(fmt.Sprintf("Branch %s reference %s not found on remote %s", opts.Branch, repoRef, opts.URL))
+	return nil, fmt.Errorf("Branch %s reference %s not found on remote %s", opts.Branch, repoRef, opts.URL)
 }
 
 func restoreUnsupportedCapabilities(oldUnsupportedCaps []capability.Capability) {

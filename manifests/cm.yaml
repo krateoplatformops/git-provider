@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: filename-replace-values
-
+  namespace: krateo-system
 data:
   values: |
     { 

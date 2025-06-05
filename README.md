@@ -97,6 +97,17 @@ data:
 ```
 
 
+## Environment Variables
+
+| Environment Variable | Type | Default Value | Description |
+|---------------------|------|---------------|-------------|
+| `GIT_PROVIDER_DEBUG` | bool | `false` | Run with debug logging |
+| `GIT_PROVIDER_SYNC_PERIOD` | duration | `1h` | Controller manager sync period (e.g., 300ms, 1.5h, or 2h45m) |
+| `GIT_PROVIDER_POLL_INTERVAL` | duration | `2m` | Poll interval controls how often an individual resource should be checked for drift |
+| `GIT_PROVIDER_MAX_RECONCILE_RATE` | int | `5` | The number of concurrent reconciles for each controller. Maximum number of resources that can be reconciled at the same time |
+| `GIT_PROVIDER_LEADER_ELECTION` | bool | `false` | Use leader election for the controller manager |
+| `GIT_PROVIDER_MAX_ERROR_RETRY_INTERVAL` | duration | `1m` | The maximum interval between retries when an error occurs. Should be less than half of the poll interval |
+| `GIT_PROVIDER_MIN_ERROR_RETRY_INTERVAL` | duration | `1s` | The minimum interval between retries when an error occurs. Should be less than max-error-retry-interval |
 
 ## Configuration
 To view the CR configuration visit [this link](https://doc.crds.dev/github.com/krateoplatformops/git-provider).

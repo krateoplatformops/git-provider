@@ -268,9 +268,11 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 
 		err = loadIgnoreTargetFiles(ptr.StringFromPtr(spec.ToRepo.Path), co)
 		if err != nil {
-			return fmt.Errorf("unable to load ignore target files: %w", err)
+			e.log.Info("Unable to load ignore target files", "msg", err.Error())
+			e.rec.Eventf(cr, corev1.EventTypeWarning, "CannotLoadIgnoreFile",
+				"Unable to load ignore target files: %s", err.Error())
 		}
-
+		
 		if err := loadIgnoreFileEventually(co); err != nil {
 			e.log.Info("Unable to load '.krateoignore'", "msg", err.Error())
 			e.rec.Eventf(cr, corev1.EventTypeWarning, "CannotLoadIgnoreFile",

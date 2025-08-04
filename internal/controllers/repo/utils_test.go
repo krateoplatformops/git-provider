@@ -27,13 +27,15 @@ func TestLoadExternalClientOpts(t *testing.T) {
 
 	cr := &repov1alpha1.Repo{
 		Spec: repov1alpha1.RepoSpec{
-			FromRepo: repov1alpha1.RepoOpts{
-				AuthMethod: ptr.PtrTo("bearer"),
-				SecretRef: &commonv1.SecretKeySelector{
-					Key: "token",
-					Reference: commonv1.Reference{
-						Name:      "from-repo-secret",
-						Namespace: "default",
+			FromRepo: repov1alpha1.FromRepoOpts{
+				RepoOpts: repov1alpha1.RepoOpts{
+					AuthMethod: ptr.PtrTo("bearer"),
+					SecretRef: &commonv1.SecretKeySelector{
+						Key: "token",
+						Reference: commonv1.Reference{
+							Name:      "from-repo-secret",
+							Namespace: "default",
+						},
 					},
 				},
 			},

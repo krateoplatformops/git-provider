@@ -1,0 +1,34 @@
+apiVersion: git.krateo.io/v1alpha1
+kind: Repo
+metadata:
+  name: test-repo-override
+spec:
+  enableUpdate: true
+  override: true
+  fromRepo:
+    authMethod: generic
+    branch: main
+    path: /
+    usernameRef:
+      key: username
+      name: git-username
+      namespace: default
+    secretRef:
+      key: token
+      name: gh-token
+      namespace: default
+    url: https://github.com/krateoplatformops-test/test-from-override
+  toRepo:
+    authMethod: generic
+    branch: test
+    cloneFromBranch: main
+    path: prova
+    secretRef:
+      key: token
+      name: gh-token
+      namespace: default
+    usernameRef:
+      key: username
+      name: git-username
+      namespace: default
+    url: https://github.com/krateoplatformops-test/test-override

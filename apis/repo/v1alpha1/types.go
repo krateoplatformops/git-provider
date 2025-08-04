@@ -71,6 +71,14 @@ type RepoSpec struct {
 	// +kubebuilder:default:=false
 	// +optional
 	EnableUpdate *bool `json:"enableUpdate,omitempty"`
+
+	// Override: If `true`, the provider will override the existing files in the destination repository with the files from the source repository.
+	// If `false`, the provider will only add new files and update existing files in the destination repository.
+	// If not set, the provider will use the default behavior of adding new files.
+	// Avoid using this option with originPath from / to /, as it will override also service folders like .git, .github, .gitignore, etc.
+	// +kubebuilder:default:=false
+	// +optional
+	Override bool `json:"override,omitempty"`
 }
 
 // A RepoStatus represents the observed state of a Repo.

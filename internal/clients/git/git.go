@@ -8,23 +8,26 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/go-git/go-git/v5/plumbing/cache"
 	gitclient "github.com/go-git/go-git/v5/plumbing/transport/client"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
+	"github.com/go-git/go-git/v5/storage"
 
 	"github.com/go-git/go-billy/v5"
-	"github.com/go-git/go-billy/v5/memfs"
+	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/transport"
-	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/krateoplatformops/git-provider/internal/ptr"
 )
 
@@ -41,15 +44,15 @@ var (
 	NoErrAlreadyUpToDate      = git.NoErrAlreadyUpToDate
 )
 
-// Repo is an in-memory git repository
 type Repo struct {
 	rawURL      string
 	auth        transport.AuthMethod
-	storer      *memory.Storage
+	storer      storage.Storer
 	fs          billy.Filesystem
 	repo        *git.Repository
 	isNewBranch *bool
 	cookie      []byte
+	tmpDir      string
 }
 
 type CloneOptions struct {
@@ -76,13 +79,6 @@ type IndexOptions struct {
 	ToPath     string
 }
 
-// NewStorage returns a new Storage base on memory initializing also IndexStorage.
-func NewStorage() *memory.Storage {
-	mem := memory.NewStorage()
-	mem.IndexStorage = memory.IndexStorage{}
-	return mem
-}
-
 func (repo *Repo) setDefaultHTTPSClient() {
 	gitclient.InstallProtocol("https", githttp.NewClient(nil))
 }
@@ -99,7 +95,6 @@ func (repo *Repo) setCustomHTTPSClientWithCookieJar() error {
 
 	if len(split) < 7 {
 		return nil
-		// return fmt.Errorf("invalid cookie split - len is %d - %s", len(split), string(repo.cookie))
 	}
 
 	cookie := &http.Cookie{
@@ -132,12 +127,27 @@ func (repo *Repo) setCustomHTTPSClientWithCookieJar() error {
 }
 
 func GetLatestCommitRemote(opts ListOptions) (*string, error) {
+	// Crea directory temporanea
+	tmpDir, err := os.MkdirTemp("", "git-provider-list-*")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temporary directory: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	diskFS := osfs.New(tmpDir)
+	dotGitFS, err := diskFS.Chroot(".git")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create .git directory: %w", err)
+	}
+
+	storer := filesystem.NewStorage(dotGitFS, cache.NewObjectLRUDefault())
 	res := &Repo{
 		rawURL: opts.URL,
 		auth:   opts.Auth,
-		storer: memory.NewStorage(),
-		fs:     memfs.New(),
+		storer: storer,
+		fs:     diskFS,
 		cookie: opts.GitCookies,
+		tmpDir: tmpDir,
 	}
 
 	if len(res.cookie) > 0 {
@@ -147,7 +157,6 @@ func GetLatestCommitRemote(opts ListOptions) (*string, error) {
 	}
 	defer res.setDefaultHTTPSClient()
 
-	var err error
 	res.repo, err = git.Init(res.storer, res.fs)
 	if err != nil {
 		return nil, err
@@ -182,12 +191,27 @@ func restoreUnsupportedCapabilities(oldUnsupportedCaps []capability.Capability) 
 }
 
 func IsInGitCommitHistory(opts ListOptions, hash string) (bool, error) {
+	tmpDir, err := os.MkdirTemp("", "git-provider-history-*")
+	if err != nil {
+		return false, fmt.Errorf("failed to create temporary directory: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	diskFS := osfs.New(tmpDir)
+	dotGitFS, err := diskFS.Chroot(".git")
+	if err != nil {
+		return false, fmt.Errorf("failed to create .git directory: %w", err)
+	}
+
+	storer := filesystem.NewStorage(dotGitFS, cache.NewObjectLRUDefault())
+
 	res := &Repo{
 		rawURL: opts.URL,
 		auth:   opts.Auth,
-		storer: memory.NewStorage(),
-		fs:     memfs.New(),
+		storer: storer,
+		fs:     diskFS,
 		cookie: opts.GitCookies,
+		tmpDir: tmpDir,
 	}
 
 	if len(res.cookie) > 0 {
@@ -219,7 +243,6 @@ func IsInGitCommitHistory(opts ListOptions, hash string) (bool, error) {
 		}
 	}
 
-	var err error
 	res.repo, err = git.Clone(res.storer, res.fs, &cloneOpts)
 	if err != nil {
 		if strings.Contains(err.Error(), "couldn't find remote ref") {
@@ -235,8 +258,6 @@ func IsInGitCommitHistory(opts ListOptions, hash string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("failed to get commit history: %v", err)
 	}
-
-	// fmt.Println("HEAD", head.Hash().String())
 
 	// Iterate through the commits
 	found := false
@@ -280,11 +301,11 @@ func (s *Repo) UpdateIndex(idx *IndexOptions) error {
 		return path
 	}
 
-	fromIdx, err := idx.OriginRepo.storer.IndexStorage.Index()
+	fromIdx, err := idx.OriginRepo.storer.Index()
 	if err != nil {
 		return err
 	}
-	toIdx, err := s.storer.IndexStorage.Index()
+	toIdx, err := s.storer.Index()
 	if err != nil {
 		return err
 	}
@@ -309,12 +330,26 @@ func (s *Repo) UpdateIndex(idx *IndexOptions) error {
 	return nil
 }
 func Clone(opts CloneOptions) (*Repo, error) {
+	tmpDir, err := os.MkdirTemp("", "git-provider-clone-*")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temporary directory: %w", err)
+	}
+
+	diskFS := osfs.New(tmpDir)
+
+	dotGitFS, err := diskFS.Chroot(".git")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create .git directory: %w", err)
+	}
+
+	storer := filesystem.NewStorage(dotGitFS, cache.NewObjectLRUDefault())
 	res := &Repo{
 		rawURL: opts.URL,
 		auth:   opts.Auth,
-		storer: NewStorage(),
-		fs:     memfs.New(),
+		storer: storer,
+		fs:     diskFS,
 		cookie: opts.GitCookies,
+		tmpDir: tmpDir,
 	}
 
 	if len(res.cookie) > 0 {
@@ -330,7 +365,6 @@ func Clone(opts CloneOptions) (*Repo, error) {
 	}
 
 	// Clone the given repository to the given directory
-	var err error
 	cloneOpts := git.CloneOptions{
 		RemoteName:      "origin",
 		URL:             opts.URL,
@@ -416,6 +450,13 @@ func (s *Repo) FS() billy.Filesystem {
 	return s.fs
 }
 
+func (s *Repo) Cleanup() error {
+	if s.tmpDir != "" {
+		return os.RemoveAll(s.tmpDir)
+	}
+	return nil
+}
+
 func (s *Repo) CurrentBranch() string {
 	if err := s.setCustomHTTPSClientWithCookieJar(); err != nil {
 		return ""
@@ -487,27 +528,27 @@ func (s *Repo) Branch(name string, createOpt *CreateOpt) error {
 
 func (s *Repo) Commit(path, msg string, opt *IndexOptions) (string, error) {
 	if err := s.setCustomHTTPSClientWithCookieJar(); err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to set custom HTTPS client: %w", err)
 	}
 	defer s.setDefaultHTTPSClient()
 
 	wt, err := s.repo.Worktree()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to get worktree: %w", err)
 	}
 	// git add $path
 	if _, err := wt.Add(path); err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to add file to index: %w", err)
 	}
 
 	err = s.UpdateIndex(opt)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to update index: %w", err)
 	}
 
 	fStatus, err := wt.Status()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to get status of worktree: %w", err)
 	}
 
 	if fStatus.IsClean() && !ptr.BoolFromPtr(s.isNewBranch) {
@@ -553,7 +594,6 @@ func (s *Repo) Push(downstream, branch string, insecure bool) error {
 	var foundLocal bool
 	refs.ForEach(func(ref *plumbing.Reference) error {
 		if ref.Name() == refName {
-			//fmt.Printf("reference exists locally:\n%s\n", ref)
 			foundLocal = true
 		}
 		return nil

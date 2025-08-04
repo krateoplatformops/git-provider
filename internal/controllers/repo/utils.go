@@ -134,8 +134,8 @@ func createRenderFuncs(co *copier, values interface{}) {
 
 }
 
-func loadIgnoreFileEventually(co *copier) error {
-	fp, err := co.fromRepo.FS().Open(".krateoignore")
+func loadIgnoreFileEventually(co *copier, path string) error {
+	fp, err := co.fromRepo.FS().Open(filepath.Join(path, ".krateoignore"))
 	if err != nil {
 		return err
 	}

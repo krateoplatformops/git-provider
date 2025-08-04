@@ -36,7 +36,7 @@ func TestCopier(t *testing.T) {
 	co.toRepo.FS().MkdirAll("/", 0755)
 	err = loadIgnoreTargetFiles("/", co)
 	require.NoError(t, err)
-	err = loadIgnoreFileEventually(co)
+	err = loadIgnoreFileEventually(co, "/")
 	require.NoError(t, err)
 	err = co.copyDir("/", "/")
 	require.NoError(t, err)

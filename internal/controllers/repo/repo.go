@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -218,6 +219,8 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 	if err != nil {
 		return fmt.Errorf("cloning toRepo: %w", err)
 	}
+	defer toRepo.Cleanup()
+
 	e.log.Debug("Target repo cloned", "url", spec.ToRepo.Url)
 	e.rec.Eventf(cr, corev1.EventTypeNormal, "TargetRepoCloned",
 		"Successfully cloned target repo: %s", spec.ToRepo.Url)
@@ -234,6 +237,7 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 	if err != nil {
 		return fmt.Errorf("cloning fromRepo: %w", err)
 	}
+	defer fromRepo.Cleanup()
 	e.log.Debug("Origin repo cloned", "url", spec.FromRepo.Url)
 	e.rec.Eventf(cr, corev1.EventTypeNormal, "OriginRepoCloned",
 		"Successfully cloned origin repo: %s", spec.FromRepo.Url)
@@ -266,12 +270,30 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 			)
 		}
 
-		err = loadIgnoreTargetFiles(ptr.StringFromPtr(spec.ToRepo.Path), co)
-		if err != nil {
-			return fmt.Errorf("unable to load ignore target files: %w", err)
+		if !cr.Spec.Override {
+			e.log.Debug("Override is false, ignoring files that already exist in target repo")
+			toPath := ptr.StringFromPtr(spec.ToRepo.Path)
+			if _, err := os.Stat(toPath); err == nil {
+				err = loadIgnoreTargetFiles(toPath, co)
+				if err != nil {
+					return fmt.Errorf("unable to load ignore target files: %w", err)
+				}
+			} else if os.IsNotExist(err) {
+				e.log.Debug("Target path does not exist, no files to ignore", "path", toPath)
+			} else {
+				return fmt.Errorf("unable to check target path: %w", err)
+			}
+		} else {
+			co.targetIgnore = nil
+			e.log.Debug("Override is true, overriding all files in target repo")
+			if co.originCopyPath == "/" && co.targetCopyPath == "/" {
+				e.rec.Eventf(cr, corev1.EventTypeWarning, "OverrideWarning",
+					"Override is set to true, but originPath and targetPath are both set to '/', this will override also service folders like .git, .github, .gitignore, etc. Consider using a different path for originPath or targetPath. This can broke the target repository causing the impossibility to push changes.")
+				e.log.Info("Override is set to true, but originPath and targetPath are both set to '/', this will override also service folders like .git, .github, .gitignore, etc. Consider using a different path for originPath or targetPath. This can broke the target repository causing the impossibility to push changes.")
+			}
 		}
 
-		if err := loadIgnoreFileEventually(co); err != nil {
+		if err := loadIgnoreFileEventually(co, fromPath); err != nil {
 			e.log.Info("Unable to load '.krateoignore'", "msg", err.Error())
 			e.rec.Eventf(cr, corev1.EventTypeWarning, "CannotLoadIgnoreFile",
 				"Unable to load '.krateoignore' file: %s", err.Error())
@@ -308,7 +330,7 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 	if err == git.NoErrAlreadyUpToDate {
 		toRepoCommitId, err := toRepo.GetLatestCommit(toRepo.CurrentBranch())
 		if err != nil {
-			return err
+			return fmt.Errorf("unable to get latest commit from target repo: %w", err)
 		}
 		e.log.Debug("Target repo not commited", "branch", toRepo.CurrentBranch(), "status", "repository already up-to-date")
 		e.rec.Eventf(cr, corev1.EventTypeNormal, "RepoAlreadyUpToDate",
@@ -326,7 +348,7 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 		}
 		return nil
 	} else if err != nil {
-		return err
+		return fmt.Errorf("unable to commit target repo: %w", err)
 	}
 	e.log.Debug("Target repo committed", "branch", toRepo.CurrentBranch(), "commitId", toRepoCommitId)
 	e.rec.Eventf(cr, corev1.EventTypeNormal, "RepoCommitSuccess",

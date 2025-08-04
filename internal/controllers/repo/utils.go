@@ -30,13 +30,13 @@ type externalClientOpts struct {
 
 func loadExternalClientOpts(ctx context.Context, kc client.Client, cr *repov1alpha1.Repo) (*externalClientOpts, error) {
 	var fromRepoCookie, toRepoCookie []byte
-	fromRepoCreds, err := getRepoCredentials(ctx, kc, cr.Spec.FromRepo)
+	fromRepoCreds, err := getRepoCredentials(ctx, kc, cr.Spec.FromRepo.RepoOpts)
 	if err != nil {
 		return nil, fmt.Errorf("retrieving .fromRepo credentials: %w", err)
 	}
 	fromRepoCookie = nil
 	if fromRepoCreds == nil {
-		fromRepoCookie, err = getRepoCookies(ctx, kc, cr.Spec.FromRepo)
+		fromRepoCookie, err = getRepoCookies(ctx, kc, cr.Spec.FromRepo.RepoOpts)
 		if err != nil {
 			return nil, fmt.Errorf("retrieving .fromRepo cookies: %w", err)
 		}
@@ -52,8 +52,6 @@ func loadExternalClientOpts(ctx context.Context, kc client.Client, cr *repov1alp
 			return nil, fmt.Errorf("retrieving .toRepo cookies: %w", err)
 		}
 	}
-
-	// fmt.Println("ToRepoCookieFile", string(toRepoCookie))
 
 	return &externalClientOpts{
 		Insecure:                ptr.BoolFromPtr(cr.Spec.Insecure),

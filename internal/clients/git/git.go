@@ -12,6 +12,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing/cache"
@@ -43,6 +44,8 @@ var (
 	ErrAuthorizationFailed    = errors.New("authorization failed")
 	NoErrAlreadyUpToDate      = git.NoErrAlreadyUpToDate
 )
+
+var clientMutex sync.Mutex
 
 type Repo struct {
 	rawURL      string
@@ -80,6 +83,8 @@ type IndexOptions struct {
 }
 
 func (repo *Repo) setDefaultHTTPSClient() {
+	clientMutex.Lock()
+	defer clientMutex.Unlock()
 	gitclient.InstallProtocol("https", githttp.NewClient(nil))
 }
 
@@ -121,6 +126,8 @@ func (repo *Repo) setCustomHTTPSClientWithCookieJar() error {
 		Jar: jar,
 	}
 
+	clientMutex.Lock()
+	defer clientMutex.Unlock()
 	gitclient.InstallProtocol("https", githttp.NewClient(customClient))
 
 	return err

@@ -44,11 +44,20 @@ type RepoOpts struct {
 	CloneFromBranch *string `json:"cloneFromBranch,omitempty"`
 }
 
+type FromRepoOpts struct {
+	// KrateoIgnorePath: path to the krateo ignore file, if not set the default is `/`, the root of the repository
+	// +kubebuilder:default:="/"
+	// +optional
+	KrateoIgnorePath string `json:"krateoIgnorePath,omitempty"`
+
+	RepoOpts `json:",inline"`
+}
+
 // A RepoSpec defines the desired state of a Repo.
 type RepoSpec struct {
 	// FromRepo: repo origin to copy from
 	// +immutable
-	FromRepo RepoOpts `json:"fromRepo"`
+	FromRepo FromRepoOpts `json:"fromRepo"`
 
 	// ToRepo: repo destination to copy to
 	// +immutable

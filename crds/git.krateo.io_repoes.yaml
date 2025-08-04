@@ -111,6 +111,11 @@ spec:
                       - If the branch exists, the parameter is ignored.
                       - If the parameter is not set, the branch is created empty and has no parents (no history) - `git switch --orphan branch-name`
                     type: string
+                  krateoIgnorePath:
+                    default: /
+                    description: 'KrateoIgnorePath: path to the krateo ignore file,
+                      if not set the default is `/`, the root of the repository'
+                    type: string
                   path:
                     default: /
                     description: 'Path: if in spec.fromRepo, Represents the folder

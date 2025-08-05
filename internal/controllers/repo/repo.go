@@ -42,6 +42,8 @@ type external struct {
 	rec  record.EventRecorder
 }
 
+var homeDir string
+
 func (e *external) Observe(ctx context.Context, mg resource.Managed) (reconciler.ExternalObservation, error) {
 	cr, ok := mg.(*repov1alpha1.Repo)
 	if !ok {
@@ -91,6 +93,7 @@ func (e *external) Observe(ctx context.Context, mg resource.Managed) (reconciler
 		Insecure:   e.cfg.Insecure,
 		Branch:     *cr.Spec.FromRepo.Branch,
 		GitCookies: e.cfg.FromRepoCookieFile,
+		HomeDir:    homeDir, // Use the configured home directory for temporary files
 	})
 
 	if err != nil {
@@ -104,6 +107,7 @@ func (e *external) Observe(ctx context.Context, mg resource.Managed) (reconciler
 		Insecure:   e.cfg.Insecure,
 		Branch:     *cr.Spec.ToRepo.Branch,
 		GitCookies: e.cfg.ToRepoCookieFile,
+		HomeDir:    homeDir, // Use the configured home directory for temporary files
 	}, ptr.StringFromPtr(cr.Status.TargetCommitId))
 	if err != nil {
 		e.log.Debug("Unable to check if target repo is synced", "msg", err.Error())
@@ -215,6 +219,7 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 		Branch:                  ptr.StringFromPtr(spec.ToRepo.Branch),
 		AlternativeBranch:       cr.Spec.ToRepo.CloneFromBranch,
 		GitCookies:              e.cfg.ToRepoCookieFile,
+		HomeDir:                 homeDir, // Use the configured home directory for temporary files
 	})
 	if err != nil {
 		return fmt.Errorf("cloning toRepo: %w", err)
@@ -233,6 +238,7 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 		UnsupportedCapabilities: e.cfg.UnsupportedCapabilities,
 		Branch:                  ptr.StringFromPtr(spec.FromRepo.Branch),
 		GitCookies:              e.cfg.FromRepoCookieFile,
+		HomeDir:                 homeDir, // Use the configured home directory for temporary files
 	})
 	if err != nil {
 		return fmt.Errorf("cloning fromRepo: %w", err)

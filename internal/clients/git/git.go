@@ -66,6 +66,7 @@ type CloneOptions struct {
 	Branch                  string
 	AlternativeBranch       *string
 	GitCookies              []byte
+	HomeDir                 string // The home directory to use for temporary files
 }
 
 type ListOptions struct {
@@ -74,6 +75,7 @@ type ListOptions struct {
 	Insecure   bool
 	Branch     string
 	GitCookies []byte
+	HomeDir    string // The home directory to use for temporary files
 }
 
 type IndexOptions struct {
@@ -134,8 +136,7 @@ func (repo *Repo) setCustomHTTPSClientWithCookieJar() error {
 }
 
 func GetLatestCommitRemote(opts ListOptions) (*string, error) {
-	// Crea directory temporanea
-	tmpDir, err := os.MkdirTemp("", "git-provider-list-*")
+	tmpDir, err := os.MkdirTemp(opts.HomeDir, "git-provider-list-*")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temporary directory: %w", err)
 	}
@@ -198,7 +199,7 @@ func restoreUnsupportedCapabilities(oldUnsupportedCaps []capability.Capability) 
 }
 
 func IsInGitCommitHistory(opts ListOptions, hash string) (bool, error) {
-	tmpDir, err := os.MkdirTemp("", "git-provider-history-*")
+	tmpDir, err := os.MkdirTemp(opts.HomeDir, "git-provider-history-*")
 	if err != nil {
 		return false, fmt.Errorf("failed to create temporary directory: %w", err)
 	}
@@ -337,7 +338,7 @@ func (s *Repo) UpdateIndex(idx *IndexOptions) error {
 	return nil
 }
 func Clone(opts CloneOptions) (*Repo, error) {
-	tmpDir, err := os.MkdirTemp("", "git-provider-clone-*")
+	tmpDir, err := os.MkdirTemp(opts.HomeDir, "git-provider-clone-*")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temporary directory: %w", err)
 	}

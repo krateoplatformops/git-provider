@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"os"
 
 	repov1alpha1 "github.com/krateoplatformops/git-provider/apis/repo/v1alpha1"
 	"github.com/krateoplatformops/provider-runtime/pkg/reconciler"
@@ -59,6 +60,11 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (reconcile
 	cfg, err := loadExternalClientOpts(ctx, c.kube, cr)
 	if err != nil {
 		return nil, err
+	}
+
+	homeDir, err = os.UserHomeDir()
+	if err != nil {
+		homeDir = "/tmp"
 	}
 
 	return &external{

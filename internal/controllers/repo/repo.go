@@ -279,7 +279,7 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 		if !cr.Spec.Override {
 			e.log.Debug("Override is false, ignoring files that already exist in target repo")
 			toPath := ptr.StringFromPtr(spec.ToRepo.Path)
-			if _, err := os.Stat(toPath); err == nil {
+			if _, err := co.toRepo.FS().Stat(toPath); err == nil {
 				err = loadIgnoreTargetFiles(toPath, co)
 				if err != nil {
 					return fmt.Errorf("unable to load ignore target files: %w", err)

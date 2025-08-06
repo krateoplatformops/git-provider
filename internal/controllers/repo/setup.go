@@ -3,8 +3,10 @@ package repo
 import (
 	"context"
 	"os"
+	"time"
 
 	repov1alpha1 "github.com/krateoplatformops/git-provider/apis/repo/v1alpha1"
+	"github.com/krateoplatformops/plumbing/env"
 	"github.com/krateoplatformops/provider-runtime/pkg/reconciler"
 
 	"github.com/krateoplatformops/provider-runtime/pkg/controller"
@@ -27,6 +29,8 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 
 	recorder := mgr.GetEventRecorderFor(name)
 
+	timeout := env.Duration("GIT_PROVIDER_TIMEOUT", 4*time.Minute)
+
 	r := reconciler.NewReconciler(mgr,
 		resource.ManagedKind(repov1alpha1.RepoGroupVersionKind),
 		reconciler.WithExternalConnecter(&connector{
@@ -36,7 +40,9 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 		}),
 		reconciler.WithPollInterval(o.PollInterval),
 		reconciler.WithLogger(log),
-		reconciler.WithRecorder(event.NewAPIRecorder(recorder)))
+		reconciler.WithRecorder(event.NewAPIRecorder(recorder)),
+		reconciler.WithTimeout(timeout),
+	)
 
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(name).
@@ -67,9 +73,11 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (reconcile
 		homeDir = "/tmp"
 	}
 
+	log := c.log.WithValues("name", cr.Name, "namespace", cr.Namespace)
+
 	return &external{
 		kube: c.kube,
-		log:  c.log,
+		log:  log,
 		cfg:  cfg,
 		rec:  c.recorder,
 	}, nil

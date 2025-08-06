@@ -13,7 +13,6 @@ import (
 	"github.com/cbroglie/mustache"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-git/v5/plumbing/transport"
-	"github.com/krateoplatformops/git-provider/internal/ptr"
 	"github.com/krateoplatformops/provider-runtime/pkg/resource"
 	gi "github.com/sabhiram/go-gitignore"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -54,8 +53,8 @@ func loadExternalClientOpts(ctx context.Context, kc client.Client, cr *repov1alp
 	}
 
 	return &externalClientOpts{
-		Insecure:                ptr.BoolFromPtr(cr.Spec.Insecure),
-		UnsupportedCapabilities: ptr.BoolFromPtr(cr.Spec.UnsupportedCapabilities),
+		Insecure:                cr.Spec.Insecure,
+		UnsupportedCapabilities: cr.Spec.UnsupportedCapabilities,
 		FromRepoCreds:           fromRepoCreds,
 		ToRepoCreds:             toRepoCreds,
 		FromRepoCookieFile:      fromRepoCookie,
@@ -84,14 +83,13 @@ func getRepoCredentials(ctx context.Context, k client.Client, opts repov1alpha1.
 		return nil, err
 	}
 
-	authMethod := ptr.StringFromPtr(opts.AuthMethod)
-	if strings.EqualFold(authMethod, "bearer") {
+	if strings.EqualFold(opts.AuthMethod, "bearer") {
 		return &githttp.TokenAuth{
 			Token: token,
 		}, nil
 	}
 
-	if strings.EqualFold(authMethod, "cookiefile") {
+	if strings.EqualFold(opts.AuthMethod, "cookiefile") {
 		return nil, nil
 	}
 

@@ -108,6 +108,7 @@ data:
 | `GIT_PROVIDER_LEADER_ELECTION` | bool | `false` | Use leader election for the controller manager |
 | `GIT_PROVIDER_MAX_ERROR_RETRY_INTERVAL` | duration | `1m` | The maximum interval between retries when an error occurs. Should be less than half of the poll interval |
 | `GIT_PROVIDER_MIN_ERROR_RETRY_INTERVAL` | duration | `1s` | The minimum interval between retries when an error occurs. Should be less than max-error-retry-interval |
+| `GIT_PROVIDER_TIMEOUT` | duration | `4m` | The timeout time for each action. |
 
 ## Configuration
 To view the CR configuration visit [this link](https://doc.crds.dev/github.com/krateoplatformops/git-provider).

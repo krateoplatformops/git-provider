@@ -3,15 +3,17 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"time"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	"github.com/go-logr/logr"
 	"github.com/krateoplatformops/git-provider/apis"
 	"github.com/krateoplatformops/plumbing/env"
+	prettylog "github.com/krateoplatformops/plumbing/slogs/pretty"
 	"github.com/krateoplatformops/provider-runtime/pkg/logging"
 	"github.com/krateoplatformops/provider-runtime/pkg/ratelimiter"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -38,19 +40,52 @@ func main() {
 	minErrorRetryInterval := flag.Duration("min-error-retry-interval", env.Duration(fmt.Sprintf("%s_MIN_ERROR_RETRY_INTERVAL", envVarPrefix), 1*time.Second), "The minimum interval between retries when an error occurs. This should be less than max-error-retry-interval.")
 	flag.Parse()
 
-	zl := zap.New(zap.UseDevMode(*debug))
-	log := logging.NewLogrLogger(zl.WithName(fmt.Sprintf("%s-provider", strcase.KebabCase(providerName))))
+	// var zapOptions []zap.Opts
+	// if *debug {
+	// 	// Debug mode: mostra DEBUG, INFO, WARN, ERROR
+	// 	zapOptions = []zap.Opts{
+	// 		zap.UseDevMode(true),
+	// 		zap.Level(zapcore.DebugLevel),
+	// 	}
+	// } else {
+	// 	// Production mode: mostra solo INFO, WARN, ERROR
+	// 	zapOptions = []zap.Opts{
+	// 		zap.UseDevMode(false),
+	// 		zap.Level(zapcore.InfoLevel),
+	// 	}
+	// }
+
+	// zl := zap.New(zapOptions...)
+
+	// log := logging.NewLogrLogger(zl.WithName(fmt.Sprintf("%s-provider", strcase.KebabCase(providerName))))
+	// ctrl.SetLogger(zl)
+
+	logLevel := slog.LevelInfo
 	if *debug {
-		ctrl.SetLogger(zl)
+		logLevel = slog.LevelDebug
 	}
 
-	log.Debug("Starting", "sync-period", syncPeriod.String())
+	lh := prettylog.New(&slog.HandlerOptions{
+		Level:     logLevel,
+		AddSource: false,
+	},
+		prettylog.WithDestinationWriter(os.Stderr),
+		prettylog.WithColor(),
+		prettylog.WithOutputEmptyAttrs(),
+	)
+
+	logrlog := logr.FromSlogHandler(slog.New(lh).Handler())
+	log := logging.NewLogrLogger(logrlog)
+
+	log.Info("Starting", "sync-period", syncPeriod.String())
 
 	cfg, err := ctrl.GetConfig()
 	if err != nil {
 		log.Info("Cannot get API server rest config, trying in-cluster config", "error", err)
 		os.Exit(1)
 	}
+
+	ctrl.SetLogger(logrlog)
 
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 		LeaderElection:   *leaderElection,

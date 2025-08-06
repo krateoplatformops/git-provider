@@ -15,11 +15,11 @@ type RepoOpts struct {
 	// Path: if in spec.fromRepo, Represents the folder to clone from. If not set the entire repository is cloned. If in spec.toRepo, represents the folder to use as destination.
 	// +kubebuilder:default:="/"
 	// +optional
-	Path *string `json:"path,omitempty"`
+	Path string `json:"path,omitempty"`
 
 	// Branch: if in spec.fromRepo, the branch to copy from. If in spec.toRepo, represents the branch to populate; If the branch does not exist on remote is created by the provider.
 	// +required
-	Branch *string `json:"branch"`
+	Branch string `json:"branch"`
 
 	// SecretRef: reference to a secret that contains token required to git server authentication or cookie file in case of 'cookiefile' authMethod.
 	SecretRef *commonv1.SecretKeySelector `json:"secretRef"`
@@ -33,7 +33,7 @@ type RepoOpts struct {
 	// +kubebuilder:validation:Enum=generic;bearer;cookiefile
 	// +kubebuilder:default:=generic
 	// +optional
-	AuthMethod *string `json:"authMethod,omitempty"`
+	AuthMethod string `json:"authMethod,omitempty"`
 
 	/*
 		CloneFromBranch: used the parent of the new branch.
@@ -41,7 +41,7 @@ type RepoOpts struct {
 		- If the parameter is not set, the branch is created empty and has no parents (no history) - `git switch --orphan branch-name`
 	*/
 	// +optional
-	CloneFromBranch *string `json:"cloneFromBranch,omitempty"`
+	CloneFromBranch string `json:"cloneFromBranch,omitempty"`
 }
 
 type FromRepoOpts struct {
@@ -69,17 +69,17 @@ type RepoSpec struct {
 
 	// Insecure: Insecure is useful with hand made SSL certs (default: false)
 	// +optional
-	Insecure *bool `json:"insecure,omitempty"`
+	Insecure bool `json:"insecure,omitempty"`
 
 	// UnsupportedCapabilities: If `true` [capabilities not supported by any client implementation](https://github.com/go-git/go-git/blob/4fd9979d5c2940e72bdd6946fec21e02d959f0f6/plumbing/transport/common.go#L310) will not be used by the provider
 	// +optional
 	// +kubebuilder:default:=false
-	UnsupportedCapabilities *bool `json:"unsupportedCapabilities,omitempty"`
+	UnsupportedCapabilities bool `json:"unsupportedCapabilities,omitempty"`
 
 	// EnableUpdate: If `true`, the provider performs updates on the repository specified in `toRepo` when newer commits are retrieved from `fromRepo`
 	// +kubebuilder:default:=false
 	// +optional
-	EnableUpdate *bool `json:"enableUpdate,omitempty"`
+	EnableUpdate bool `json:"enableUpdate,omitempty"`
 
 	// Override: If `true`, the provider will override the existing files in the destination repository with the files from the source repository.
 	// If `false`, the provider will only add new files and update existing files in the destination repository.
@@ -95,16 +95,16 @@ type RepoStatus struct {
 	commonv1.ConditionedStatus `json:",inline"`
 
 	// OriginCommitId: last commit identifier of the origin repo
-	OriginCommitId *string `json:"originCommitId,omitempty"`
+	OriginCommitId string `json:"originCommitId,omitempty"`
 
 	// TargetCommitId: last commit identifier of the target repo
-	TargetCommitId *string `json:"targetCommitId,omitempty"`
+	TargetCommitId string `json:"targetCommitId,omitempty"`
 
 	// TargetBranch: branch where commit was done
-	TargetBranch *string `json:"targetBranch,omitempty"`
+	TargetBranch string `json:"targetBranch,omitempty"`
 
 	// OriginBranch: branch where commit was done
-	OriginBranch *string `json:"originBranch,omitempty"`
+	OriginBranch string `json:"originBranch,omitempty"`
 }
 
 // +kubebuilder:object:root=true

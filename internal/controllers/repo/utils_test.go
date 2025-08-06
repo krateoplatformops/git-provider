@@ -9,7 +9,6 @@ import (
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	repov1alpha1 "github.com/krateoplatformops/git-provider/apis/repo/v1alpha1"
 	"github.com/krateoplatformops/git-provider/internal/clients/git"
-	"github.com/krateoplatformops/git-provider/internal/ptr"
 	commonv1 "github.com/krateoplatformops/provider-runtime/apis/common/v1"
 	gi "github.com/sabhiram/go-gitignore"
 	"github.com/stretchr/testify/assert"
@@ -29,7 +28,7 @@ func TestLoadExternalClientOpts(t *testing.T) {
 		Spec: repov1alpha1.RepoSpec{
 			FromRepo: repov1alpha1.FromRepoOpts{
 				RepoOpts: repov1alpha1.RepoOpts{
-					AuthMethod: ptr.PtrTo("bearer"),
+					AuthMethod: "bearer",
 					SecretRef: &commonv1.SecretKeySelector{
 						Key: "token",
 						Reference: commonv1.Reference{
@@ -40,7 +39,7 @@ func TestLoadExternalClientOpts(t *testing.T) {
 				},
 			},
 			ToRepo: repov1alpha1.RepoOpts{
-				AuthMethod: ptr.PtrTo("generic"),
+				AuthMethod: "generic",
 				SecretRef: &commonv1.SecretKeySelector{
 					Key: "token",
 					Reference: commonv1.Reference{
@@ -49,8 +48,8 @@ func TestLoadExternalClientOpts(t *testing.T) {
 					},
 				},
 			},
-			Insecure:                ptr.PtrTo(true),
-			UnsupportedCapabilities: ptr.PtrTo(false),
+			Insecure:                true,
+			UnsupportedCapabilities: false,
 		},
 	}
 

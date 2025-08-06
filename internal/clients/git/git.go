@@ -29,7 +29,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage/filesystem"
-	"github.com/krateoplatformops/git-provider/internal/ptr"
+	"github.com/krateoplatformops/plumbing/ptr"
 )
 
 const (
@@ -187,7 +187,7 @@ func GetLatestCommitRemote(opts ListOptions) (*string, error) {
 	repoRef := plumbing.NewBranchReferenceName(opts.Branch)
 	for _, ref := range refs {
 		if ref.Name() == repoRef {
-			return ptr.PtrTo(ref.Hash().String()), nil
+			return ptr.To(ref.Hash().String()), nil
 		}
 	}
 
@@ -398,10 +398,10 @@ func Clone(opts CloneOptions) (*Repo, error) {
 		}
 		if opts.AlternativeBranch != nil {
 			isOrphan = false
-			cloneOpts.ReferenceName = plumbing.NewBranchReferenceName(ptr.StringFromPtr(opts.AlternativeBranch))
+			cloneOpts.ReferenceName = plumbing.NewBranchReferenceName(ptr.Deref(opts.AlternativeBranch, ""))
 			cloneOpts.SingleBranch = true
 		}
-		res.isNewBranch = ptr.PtrTo(true)
+		res.isNewBranch = ptr.To(true)
 	}
 	if len(res.cookie) > 0 {
 		if err := res.setCustomHTTPSClientWithCookieJar(); err != nil {
@@ -429,7 +429,7 @@ func Clone(opts CloneOptions) (*Repo, error) {
 	}
 
 	err = res.Branch(opts.Branch, &CreateOpt{
-		Create: ptr.BoolFromPtr(res.isNewBranch),
+		Create: ptr.Deref(res.isNewBranch, false),
 		Orphan: isOrphan,
 	})
 
@@ -559,7 +559,7 @@ func (s *Repo) Commit(path, msg string, opt *IndexOptions) (string, error) {
 		return "", fmt.Errorf("failed to get status of worktree: %w", err)
 	}
 
-	if fStatus.IsClean() && !ptr.BoolFromPtr(s.isNewBranch) {
+	if fStatus.IsClean() && !ptr.Deref(s.isNewBranch, false) {
 		return "", NoErrAlreadyUpToDate
 	}
 

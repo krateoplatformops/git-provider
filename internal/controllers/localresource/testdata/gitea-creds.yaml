@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: gitea-repo-creds
+  namespace: test-system
+type: Opaque
+stringData:
+  username: admin
+  token: admin123

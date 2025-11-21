@@ -1,0 +1,43 @@
+kind: LocalResource
+apiVersion: git.krateo.io/v1alpha1
+metadata:
+  name: local-resource-example-string
+  namespace: default
+spec:
+  placeholdersToOverride:
+  - name: example
+    value: "42"
+
+  syncEnabled: true 
+  override: true
+  insecure: true # needeed for local gitea with self-signed certificates
+  fromResource:
+    fileName: "string-resource.yaml"
+    fromString: |
+      kind: RemoteRepo
+      apiVersion: test.com/v6
+      metadata:
+        name: example-repo
+        namespace: default
+      spec:
+        zipArchive: false
+        authMethod: generic
+        branch: main
+        placeholderTest: "{{ .example }}"
+    
+
+  toRepo:
+    branch: string
+    cloneFromBranch: main
+    path: /
+    credentials:
+      authMethod: basic
+      secretRef:
+        key: token
+        name: gitea-repo-creds
+        namespace: test-system
+      usernameRef:
+        key: username
+        name: gitea-repo-creds
+        namespace: test-system
+    url: https://localhost:443/admin/test-repo.git

@@ -12,16 +12,21 @@ import (
 	commonv1 "github.com/krateoplatformops/provider-runtime/apis/common/v1"
 	"k8s.io/client-go/tools/record"
 
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/krateoplatformops/provider-runtime/pkg/event"
 	"github.com/krateoplatformops/provider-runtime/pkg/logging"
 	"github.com/krateoplatformops/provider-runtime/pkg/meta"
+	"github.com/krateoplatformops/provider-runtime/pkg/ratelimiter"
 
 	"github.com/krateoplatformops/provider-runtime/pkg/reconciler"
 	"github.com/krateoplatformops/provider-runtime/pkg/resource"
 
 	repov1alpha1 "github.com/krateoplatformops/git-provider/apis/repo/v1alpha1"
 	"github.com/krateoplatformops/git-provider/internal/clients/git"
+	"github.com/krateoplatformops/git-provider/internal/controllers/common/option"
+	"github.com/krateoplatformops/git-provider/internal/tools/copier"
 	"github.com/krateoplatformops/plumbing/ptr"
 
 	corev1 "k8s.io/api/core/v1"
@@ -30,6 +35,66 @@ import (
 const (
 	errNotRepo = "managed resource is not a repo custom resource"
 )
+
+// Setup adds a controller that reconciles Token managed resources.
+func Setup(mgr ctrl.Manager, o option.SetupOptions) error {
+	name := reconciler.ControllerName(repov1alpha1.RepoGroupKind)
+
+	log := o.Controller.Logger.WithValues("controller", name)
+
+	recorder := mgr.GetEventRecorderFor(name)
+
+	r := reconciler.NewReconciler(mgr,
+		resource.ManagedKind(repov1alpha1.RepoGroupVersionKind),
+		reconciler.WithExternalConnecter(&connector{
+			kube:     mgr.GetClient(),
+			log:      log,
+			recorder: recorder,
+		}),
+		reconciler.WithPollInterval(o.Controller.PollInterval),
+		reconciler.WithLogger(log),
+		reconciler.WithRecorder(event.NewAPIRecorder(recorder)),
+		reconciler.WithTimeout(o.Controller.Timeout),
+	)
+
+	return ctrl.NewControllerManagedBy(mgr).
+		Named(name).
+		WithOptions(o.Controller.ForControllerRuntime()).
+		For(&repov1alpha1.Repo{}).
+		Complete(ratelimiter.New(name, r, o.Controller.GlobalRateLimiter))
+}
+
+type connector struct {
+	kube     client.Client
+	log      logging.Logger
+	recorder record.EventRecorder
+}
+
+func (c *connector) Connect(ctx context.Context, mg resource.Managed) (reconciler.ExternalClient, error) {
+	cr, ok := mg.(*repov1alpha1.Repo)
+	if !ok {
+		return nil, errors.New(errNotRepo)
+	}
+
+	cfg, err := loadExternalClientOpts(ctx, c.kube, cr)
+	if err != nil {
+		return nil, err
+	}
+
+	homeDir, err = os.UserHomeDir()
+	if err != nil {
+		homeDir = "/tmp"
+	}
+
+	log := c.log.WithValues("name", cr.Name, "namespace", cr.Namespace)
+
+	return &external{
+		kube: c.kube,
+		log:  log,
+		cfg:  cfg,
+		rec:  c.recorder,
+	}, nil
+}
 
 // An ExternalClient observes, then either creates, updates, or deletes an
 // external resource to ensure it reflects the managed resource's desired state.
@@ -256,71 +321,50 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 		return err
 	}
 
-	co := newCopier(fromRepo, toRepo, spec.FromRepo.Path, spec.ToRepo.Path)
-
-	// If fromPath is not specified DON'T COPY!
 	fromPath := spec.FromRepo.Path
 	toPath := spec.ToRepo.Path
+	override := spec.Override
 	if len(toPath) == 0 {
 		toPath = "/"
 	}
 	if len(fromPath) == 0 {
 		fromPath = "/"
 	}
-	if len(fromPath) > 0 {
-		var values map[string]interface{}
-		if spec.ConfigMapKeyRef != nil {
-			values, err = e.loadValuesFromConfigMap(ctx, spec.ConfigMapKeyRef)
-			if err != nil {
-				e.log.Debug("Unable to load configmap with template data", "msg", err.Error())
-				e.rec.Eventf(cr, corev1.EventTypeWarning, "CannotLoadConfigMap",
-					"Unable to load configmap with template data: %s", err.Error())
-			}
-
-			e.log.Debug("Loaded values from config map",
-				"name", spec.ConfigMapKeyRef.Name,
-				"key", spec.ConfigMapKeyRef.Key,
-				"namespace", spec.ConfigMapKeyRef.Namespace,
-				"values", values,
-			)
+	var values map[string]interface{}
+	if spec.ConfigMapKeyRef != nil {
+		values, err = e.loadValuesFromConfigMap(ctx, spec.ConfigMapKeyRef)
+		if err != nil {
+			e.log.Debug("Unable to load configmap with template data", "msg", err.Error())
+			e.rec.Eventf(cr, corev1.EventTypeWarning, "CannotLoadConfigMap",
+				"Unable to load configmap with template data: %s", err.Error())
 		}
 
-		if !cr.Spec.Override {
-			e.log.Debug("Override is false, ignoring files that already exist in target repo")
-			if _, err := toRepo.FS().Stat(toPath); err == nil {
-				err = loadIgnoreTargetFiles(toPath, co)
-				if err != nil {
-					return fmt.Errorf("unable to load ignore target files: %w", err)
-				}
-			} else if os.IsNotExist(err) {
-				e.log.Debug("Target path does not exist, no files to ignore", "path", toPath)
-			} else {
-				return fmt.Errorf("unable to check target path: %w", err)
-			}
-		} else {
-			co.targetIgnore = nil
-			e.log.Debug("Override is true, overriding all files in target repo")
-			if co.originCopyPath == "/" && co.targetCopyPath == "/" {
-				e.rec.Eventf(cr, corev1.EventTypeWarning, "OverrideWarning",
-					"Override is set to true, but originPath and targetPath are both set to '/', this will override also service folders like .git, .github, .gitignore, etc. Consider using a different path for originPath or targetPath. This can broke the target repository causing the impossibility to push changes.")
-				e.log.Info("Override is set to true, but originPath and targetPath are both set to '/', this will override also service folders like .git, .github, .gitignore, etc. Consider using a different path for originPath or targetPath. This can broke the target repository causing the impossibility to push changes.")
-			}
+		e.log.Debug("Loaded values from config map",
+			"name", spec.ConfigMapKeyRef.Name,
+			"key", spec.ConfigMapKeyRef.Key,
+			"namespace", spec.ConfigMapKeyRef.Namespace,
+			"values", values,
+		)
+	}
+	co, err := copier.NewCopier(fromRepo.FS(), toRepo.FS(),
+		copier.WithOriginCopyPath(fromPath),
+		copier.WithTargetCopyPath(toPath),
+		copier.WithIgnorePath(spec.FromRepo.KrateoIgnorePath),
+		copier.WithMustacheTemplate(values),
+	)
+	if err != nil {
+		return fmt.Errorf("unable to create copier: %w", err)
+	}
+	if override {
+		e.log.Debug("Override is true, overriding all files in target repo")
+		if fromPath == "/" && toPath == "/" {
+			e.rec.Eventf(cr, corev1.EventTypeWarning, "OverrideWarning",
+				"Override is set to true, but originPath and targetPath are both set to '/', this will override also service folders like .git, .github, .gitignore, etc. Consider using a different path for originPath or targetPath. This can broke the target repository causing the impossibility to push changes.")
+			e.log.Info("Override is set to true, but originPath and targetPath are both set to '/', this will override also service folders like .git, .github, .gitignore, etc. Consider using a different path for originPath or targetPath. This can broke the target repository causing the impossibility to push changes.")
 		}
-
-		ignorePath := cr.Spec.FromRepo.KrateoIgnorePath
-		if err := loadIgnoreFileEventually(co, ignorePath); err != nil {
-			e.log.Info("Unable to load '.krateoignore'", "msg", err.Error())
-			e.rec.Eventf(cr, corev1.EventTypeWarning, "CannotLoadIgnoreFile",
-				"Unable to load '.krateoignore' file: %s", err.Error())
-		}
-
-		if values != nil {
-			createRenderFuncs(co, values)
-		}
-
-		if err := co.copyDir(fromPath, toPath); err != nil {
-			return fmt.Errorf("unable to copy files: %w", err)
-		}
+	}
+	if err := co.Copy(override); err != nil {
+		return fmt.Errorf("unable to copy files: %w", err)
 	}
 
 	e.log.Info("Origin and target repo synchronized",
@@ -331,11 +375,12 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 	e.rec.Eventf(cr, corev1.EventTypeNormal, "RepoSyncSuccess",
 		"Origin and target repo synchronized")
 
-	toRepoCommitId, err := toRepo.Commit(".", commitMessage, &git.IndexOptions{
+	toRepoCommitIdObj, err := toRepo.Commit(".", commitMessage, &git.IndexOptions{
 		OriginRepo: fromRepo,
 		FromPath:   fromPath,
 		ToPath:     toPath,
 	})
+	toRepoCommitId := toRepoCommitIdObj.String()
 	if err == git.NoErrAlreadyUpToDate {
 		toRepoCommitId, err := toRepo.GetLatestCommit(toRepo.CurrentBranch())
 		if err != nil {

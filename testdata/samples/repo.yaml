@@ -1,38 +1,38 @@
 apiVersion: git.krateo.io/v1alpha1
 kind: Repo
 metadata:
-  name: test-repo
+  name: test-repo-fw
 spec:
-  enableUpdate: false
   configMapKeyRef:
     key: values
-    name: filename-replace-values
+    name: fw-replace-values
     namespace: default
+  enableUpdate: false
   fromRepo:
     authMethod: generic
     branch: main
-    path: skeleton
+    path: skeleton/
     usernameRef:
       key: username
       name: git-username
-      namespace: krateo-system
+      namespace: default
     secretRef:
       key: token
-      name: gh-sec
-      namespace: krateo-system
-    url: https://github.com/matteogastaldello/fromRepo
+      name: gh-token
+      namespace: default
+    url: https://github.com/krateoplatformops/krateo-v2-template-fireworksapp
   toRepo:
     authMethod: generic
     branch: test
     cloneFromBranch: main
-    path: /
+    path: test-fw/
     secretRef:
       key: token
-      name: gh-sec
-      namespace: krateo-system
+      name: gh-token
+      namespace: default
     usernameRef:
       key: username
       name: git-username
-      namespace: krateo-system
-    url: https://github.com/matteogastaldello/toRepo
+      namespace: default
+    url: https://github.com/krateoplatformops-test/test-fw
   unsupportedCapabilities: true

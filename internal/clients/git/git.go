@@ -2,6 +2,7 @@ package git
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -14,6 +15,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	contexttools "github.com/krateoplatformops/provider-runtime/pkg/context"
+	"github.com/krateoplatformops/provider-runtime/pkg/logging"
 
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	gitclient "github.com/go-git/go-git/v5/plumbing/transport/client"
@@ -33,8 +37,8 @@ import (
 )
 
 const (
-	commitAuthorEmail = "krateoctl@krateoplatformops.io"
-	commitAuthorName  = "krateoctl"
+	commitAuthorEmail = "contact@krateo.io"
+	commitAuthorName  = "krateo-git-provider"
 )
 
 var (
@@ -224,7 +228,7 @@ func IsInGitCommitHistory(opts ListOptions, hash string) (bool, error) {
 
 	if len(res.cookie) > 0 {
 		if err := res.setCustomHTTPSClientWithCookieJar(); err != nil {
-			return false, err
+			return false, fmt.Errorf("failed to set custom HTTPS client: %w", err)
 		}
 	}
 	defer res.setDefaultHTTPSClient()
@@ -254,6 +258,7 @@ func IsInGitCommitHistory(opts ListOptions, hash string) (bool, error) {
 	res.repo, err = git.Clone(res.storer, res.fs, &cloneOpts)
 	if err != nil {
 		if strings.Contains(err.Error(), "couldn't find remote ref") {
+			fmt.Println("Branch not found in remote repository")
 			return false, nil
 		}
 		return false, fmt.Errorf("failed to clone repository: %v", err)
@@ -278,6 +283,95 @@ func IsInGitCommitHistory(opts ListOptions, hash string) (bool, error) {
 	})
 	if err != nil {
 		return false, fmt.Errorf("failed to iterate through commits: %v", err)
+	}
+	return found, err
+}
+
+// the first return value is false if a git-provider commit is
+func IsFuncInGitCommitHistory(ctx context.Context, opts ListOptions, f func(commit *object.Commit) bool) (plumbing.Hash, error) {
+
+	log := contexttools.LoggerFromCtx(ctx, logging.NewNopLogger())
+
+	tmpDir, err := os.MkdirTemp(opts.HomeDir, "git-provider-history-*")
+	if err != nil {
+		return plumbing.Hash{}, fmt.Errorf("failed to create temporary directory: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	diskFS := osfs.New(tmpDir)
+	dotGitFS, err := diskFS.Chroot(".git")
+	if err != nil {
+		return plumbing.Hash{}, fmt.Errorf("failed to create .git directory: %w", err)
+	}
+
+	storer := filesystem.NewStorage(dotGitFS, cache.NewObjectLRUDefault())
+
+	res := &Repo{
+		rawURL: opts.URL,
+		auth:   opts.Auth,
+		storer: storer,
+		fs:     diskFS,
+		cookie: opts.GitCookies,
+		tmpDir: tmpDir,
+	}
+
+	if len(res.cookie) > 0 {
+		if err := res.setCustomHTTPSClientWithCookieJar(); err != nil {
+			return plumbing.Hash{}, err
+		}
+	}
+	defer res.setDefaultHTTPSClient()
+
+	cloneOpts := git.CloneOptions{
+		RemoteName:      "origin",
+		URL:             opts.URL,
+		Auth:            opts.Auth,
+		ReferenceName:   plumbing.NewBranchReferenceName(opts.Branch),
+		SingleBranch:    true,
+		InsecureSkipTLS: opts.Insecure,
+	}
+
+	oldUnsupportedCaps := transport.UnsupportedCapabilities
+	defer restoreUnsupportedCapabilities(oldUnsupportedCaps)
+
+	// Azure DevOps requires multi_ack and multi_ack_detailed capabilities, which go-git doesn't
+	// implement. But: it's possible to do a full clone by saying it's _not_ _un_supported, in which
+	// case the library happily functions so long as it doesn't _actually_ get a multi_ack packet. See
+	// https://github.com/go-git/go-git/blob/v5.5.1/_examples/azure_devops/main.go.
+	if strings.Contains(opts.URL, "dev.azure.com") {
+		transport.UnsupportedCapabilities = []capability.Capability{
+			capability.ThinPack,
+		}
+	}
+
+	res.repo, err = git.Clone(res.storer, res.fs, &cloneOpts)
+	if err != nil {
+		if strings.Contains(err.Error(), "couldn't find remote ref") {
+			log.Warn("Branch not found in remote repository", "branch", opts.Branch, "url", opts.URL)
+			return plumbing.Hash{}, nil
+		}
+		return plumbing.Hash{}, fmt.Errorf("failed to clone repository: %v", err)
+	}
+	head, err := res.repo.Head()
+	if err != nil {
+		return plumbing.Hash{}, fmt.Errorf("failed to get HEAD: %v", err)
+	}
+	iter, err := res.repo.Log(&git.LogOptions{From: head.Hash()})
+	if err != nil {
+		return plumbing.Hash{}, fmt.Errorf("failed to get commit history: %v", err)
+	}
+
+	// Iterate through the commits
+	found := plumbing.Hash{}
+	err = iter.ForEach(func(c *object.Commit) error {
+		if f(c) {
+			found = c.Hash
+			return nil
+		}
+		return nil
+	})
+	if err != nil {
+		return plumbing.Hash{}, fmt.Errorf("failed to iterate through commits: %v", err)
 	}
 	return found, err
 }
@@ -367,6 +461,16 @@ func Clone(opts CloneOptions) (*Repo, error) {
 	}
 
 	if opts.UnsupportedCapabilities {
+		transport.UnsupportedCapabilities = []capability.Capability{
+			capability.ThinPack,
+		}
+	}
+
+	// Azure DevOps requires multi_ack and multi_ack_detailed capabilities, which go-git doesn't
+	// implement. But: it's possible to do a full clone by saying it's _not_ _un_supported, in which
+	// case the library happily functions so long as it doesn't _actually_ get a multi_ack packet. See
+	// https://github.com/go-git/go-git/blob/v5.5.1/_examples/azure_devops/main.go.
+	if strings.Contains(opts.URL, "dev.azure.com") {
 		transport.UnsupportedCapabilities = []capability.Capability{
 			capability.ThinPack,
 		}
@@ -534,33 +638,36 @@ func (s *Repo) Branch(name string, createOpt *CreateOpt) error {
 	})
 }
 
-func (s *Repo) Commit(path, msg string, opt *IndexOptions) (string, error) {
+func (s *Repo) Commit(path, msg string, opt *IndexOptions) (plumbing.Hash, error) {
 	if err := s.setCustomHTTPSClientWithCookieJar(); err != nil {
-		return "", fmt.Errorf("failed to set custom HTTPS client: %w", err)
+		return plumbing.Hash{}, fmt.Errorf("failed to set custom HTTPS client: %w", err)
 	}
 	defer s.setDefaultHTTPSClient()
 
 	wt, err := s.repo.Worktree()
 	if err != nil {
-		return "", fmt.Errorf("failed to get worktree: %w", err)
-	}
-	// git add $path
-	if _, err := wt.Add(path); err != nil {
-		return "", fmt.Errorf("failed to add file to index: %w", err)
+		return plumbing.Hash{}, fmt.Errorf("failed to get worktree: %w", err)
 	}
 
-	err = s.UpdateIndex(opt)
-	if err != nil {
-		return "", fmt.Errorf("failed to update index: %w", err)
+	// git add $path
+	if _, err := wt.Add(path); err != nil {
+		return plumbing.Hash{}, fmt.Errorf("failed to add file to index: %w", err)
+	}
+
+	if opt.OriginRepo != nil {
+		err = s.UpdateIndex(opt)
+		if err != nil {
+			return plumbing.Hash{}, fmt.Errorf("failed to update index: %w", err)
+		}
 	}
 
 	fStatus, err := wt.Status()
 	if err != nil {
-		return "", fmt.Errorf("failed to get status of worktree: %w", err)
+		return plumbing.Hash{}, fmt.Errorf("failed to get status of worktree: %w", err)
 	}
 
 	if fStatus.IsClean() && !ptr.Deref(s.isNewBranch, false) {
-		return "", NoErrAlreadyUpToDate
+		return plumbing.Hash{}, NoErrAlreadyUpToDate
 	}
 
 	// git commit -m $message
@@ -572,10 +679,10 @@ func (s *Repo) Commit(path, msg string, opt *IndexOptions) (string, error) {
 		},
 	})
 	if err != nil {
-		return "", NoErrAlreadyUpToDate
+		return plumbing.Hash{}, NoErrAlreadyUpToDate
 	}
 
-	return hash.String(), nil
+	return hash, nil
 }
 
 func (s *Repo) Push(downstream, branch string, insecure bool) error {
@@ -596,7 +703,7 @@ func (s *Repo) Push(downstream, branch string, insecure bool) error {
 
 	refs, err := s.repo.References()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get references: %w", err)
 	}
 
 	var foundLocal bool
@@ -610,17 +717,17 @@ func (s *Repo) Push(downstream, branch string, insecure bool) error {
 	if !foundLocal {
 		headRef, err := s.repo.Head()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to get HEAD reference: %w", err)
 		}
 
 		ref := plumbing.NewHashReference(refName, headRef.Hash())
 		err = s.repo.Storer.SetReference(ref)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to create local branch reference: %w", err)
 		}
 	}
 
-	return s.repo.Push(&git.PushOptions{
+	err = s.repo.Push(&git.PushOptions{
 		RemoteName:      downstream,
 		Force:           false,
 		Auth:            s.auth,
@@ -629,6 +736,10 @@ func (s *Repo) Push(downstream, branch string, insecure bool) error {
 			config.RefSpec(refName + ":" + refName),
 		},
 	})
+	if err != nil {
+		return fmt.Errorf("failed to push to remote: %w", err)
+	}
+	return nil
 }
 
 func Pull(s *Repo, insecure bool) error {

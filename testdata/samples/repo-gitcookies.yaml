@@ -7,7 +7,6 @@ spec:
     key: values
     name: fw-replace-values
     namespace: default
-  deletionPolicy: Orphan
   enableUpdate: true
   fromRepo:
     authMethod: cookiefile

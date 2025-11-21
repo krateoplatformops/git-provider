@@ -18,7 +18,8 @@ import (
 	"github.com/krateoplatformops/provider-runtime/pkg/ratelimiter"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	github "github.com/krateoplatformops/git-provider/internal/controllers"
+	"github.com/krateoplatformops/git-provider/internal/controllers"
+	"github.com/krateoplatformops/git-provider/internal/controllers/common/option"
 	"github.com/krateoplatformops/provider-runtime/pkg/controller"
 
 	"github.com/stoewer/go-strcase"
@@ -33,33 +34,22 @@ func main() {
 
 	debug := flag.Bool("debug", env.Bool(fmt.Sprintf("%s_DEBUG", envVarPrefix), false), "Run with debug logging.")
 	syncPeriod := flag.Duration("sync", env.Duration(fmt.Sprintf("%s_SYNC_PERIOD", envVarPrefix), time.Hour), "Controller manager sync period such as 300ms, 1.5h, or 2h45m")
-	pollInterval := flag.Duration("poll", env.Duration(fmt.Sprintf("%s_POLL_INTERVAL", envVarPrefix), 2*time.Minute), "Poll interval controls how often an individual resource should be checked for drift.")
+	pollInterval := flag.Duration("poll", env.Duration(fmt.Sprintf("%s_POLL_INTERVAL", envVarPrefix), 3*time.Minute), "Poll interval controls how often an individual resource should be checked for drift.")
 	maxReconcileRate := flag.Int("max-reconcile-rate", env.Int(fmt.Sprintf("%s_MAX_RECONCILE_RATE", envVarPrefix), 5), "The number of concurrent reconciles for each controller. This is the maximum number of resources that can be reconciled at the same time.")
 	leaderElection := flag.Bool("leader-election", env.Bool(fmt.Sprintf("%s_LEADER_ELECTION", envVarPrefix), false), "Use leader election for the controller manager.")
 	maxErrorRetryInterval := flag.Duration("max-error-retry-interval", env.Duration(fmt.Sprintf("%s_MAX_ERROR_RETRY_INTERVAL", envVarPrefix), 1*time.Minute), "The maximum interval between retries when an error occurs. This should be less than the half of the poll interval.")
 	minErrorRetryInterval := flag.Duration("min-error-retry-interval", env.Duration(fmt.Sprintf("%s_MIN_ERROR_RETRY_INTERVAL", envVarPrefix), 1*time.Second), "The minimum interval between retries when an error occurs. This should be less than max-error-retry-interval.")
+	timeout := flag.Duration("timeout", env.Duration(fmt.Sprintf("%s_TIMEOUT", envVarPrefix), 4*time.Minute), "The timeout for each reconcile.")
+
+	gitCommitAuthorName := flag.String("git-commit-author-name", env.String(fmt.Sprintf("%s_GIT_COMMIT_AUTHOR_NAME", envVarPrefix), "krateo-git-provider"), "The name to use for git commits.")
+	gitCommitAuthorEmail := flag.String("git-commit-author-email", env.String(fmt.Sprintf("%s_GIT_COMMIT_AUTHOR_EMAIL", envVarPrefix), "contact@krateo.io"), "The email to use for git commits.")
+
 	flag.Parse()
 
-	// var zapOptions []zap.Opts
-	// if *debug {
-	// 	// Debug mode: mostra DEBUG, INFO, WARN, ERROR
-	// 	zapOptions = []zap.Opts{
-	// 		zap.UseDevMode(true),
-	// 		zap.Level(zapcore.DebugLevel),
-	// 	}
-	// } else {
-	// 	// Production mode: mostra solo INFO, WARN, ERROR
-	// 	zapOptions = []zap.Opts{
-	// 		zap.UseDevMode(false),
-	// 		zap.Level(zapcore.InfoLevel),
-	// 	}
-	// }
-
-	// zl := zap.New(zapOptions...)
-
-	// log := logging.NewLogrLogger(zl.WithName(fmt.Sprintf("%s-provider", strcase.KebabCase(providerName))))
-	// ctrl.SetLogger(zl)
-
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		homeDir = "/tmp" // this folder is guaranteed to be always writable
+	}
 	logLevel := slog.LevelInfo
 	if *debug {
 		logLevel = slog.LevelDebug
@@ -77,11 +67,20 @@ func main() {
 	logrlog := logr.FromSlogHandler(slog.New(lh).Handler())
 	log := logging.NewLogrLogger(logrlog)
 
-	log.Info("Starting", "sync-period", syncPeriod.String())
+	log.WithValues("sync-period", syncPeriod.String()).
+		WithValues("poll-interval", pollInterval.String()).
+		WithValues("max-reconcile-rate", *maxReconcileRate).
+		WithValues("leader-election", *leaderElection).
+		WithValues("min-error-retry-interval", minErrorRetryInterval.String()).
+		WithValues("max-error-retry-interval", maxErrorRetryInterval.String()).
+		WithValues("git-commit-author-name", *gitCommitAuthorName).
+		WithValues("git-commit-author-email", *gitCommitAuthorEmail).
+		WithValues("timeout", timeout.String()).
+		Info("Starting Git Provider")
 
 	cfg, err := ctrl.GetConfig()
 	if err != nil {
-		log.Info("Cannot get API server rest config, trying in-cluster config", "error", err)
+		log.Error(err, "Cannot get API server rest config, trying in-cluster config")
 		os.Exit(1)
 	}
 
@@ -98,7 +97,7 @@ func main() {
 		},
 	})
 	if err != nil {
-		log.Info("Trying to start metrics server", "error", err)
+		log.Error(err, "Cannot create controller manager")
 		os.Exit(1)
 	}
 
@@ -110,15 +109,25 @@ func main() {
 	}
 
 	if err := apis.AddToScheme(mgr.GetScheme()); err != nil {
-		log.Info("Cannot add APIs to scheme", "error", err)
+		log.Error(err, "Cannot add APIs to scheme")
 		os.Exit(1)
 	}
-	if err := github.Setup(mgr, o); err != nil {
-		log.Info("Cannot setup controllers", "error", err)
+	if err := controllers.Setup(mgr, option.SetupOptions{
+		Controller: option.ControllerOptions{
+			Options: o,
+			Timeout: *timeout,
+		},
+		Git: option.GitOptions{
+			CommitAuthorName:  *gitCommitAuthorName,
+			CommitAuthorEmail: *gitCommitAuthorEmail,
+			HomeDir:           homeDir,
+		},
+	}); err != nil {
+		log.Error(err, "Cannot setup controllers")
 		os.Exit(1)
 	}
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-		log.Info("Cannot start controller manager", "error", err)
+		log.Error(err, "Cannot start controller manager")
 		os.Exit(1)
 	}
 }

@@ -1,7 +1,6 @@
 package localfs
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -109,7 +108,7 @@ func TestWriteK8sResource_AutoFilename_Namespaced(t *testing.T) {
 			},
 		},
 	}
-	raw, err := u.MarshalJSON()
+	raw, _ := u.MarshalJSON()
 	manifest := runtime.RawExtension{Raw: raw, Object: u}
 
 	filename, err := lfs.WriteK8sResource("", manifest)
@@ -122,7 +121,7 @@ func TestWriteK8sResource_AutoFilename_Namespaced(t *testing.T) {
 		t.Fatalf("read written file error: %v", err)
 	}
 	s := string(content)
-	fmt.Println(s)
+	// fmt.Println(s)
 	if !strings.Contains(s, "apiVersion: v1") {
 		t.Fatalf("missing apiVersion in file: %s", s)
 	}
@@ -186,7 +185,7 @@ func TestWriteK8sResource_CustomFilename_NoNamespace(t *testing.T) {
 	if !strings.Contains(s, "a: b") {
 		t.Fatalf("missing data in file: %s", s)
 	}
-	fmt.Println(s)
+	// fmt.Println(s)
 }
 func TestWriteK8sResourceJQ_NoFilters_AutoFilename_Namespaced(t *testing.T) {
 	base := t.TempDir()
@@ -342,10 +341,11 @@ func TestWriteK8sResourceJQ_CustomFilename_NoNamespace(t *testing.T) {
 		t.Fatalf("read written file error: %v", err)
 	}
 	s := string(content)
+	// fmt.Println(s)
 	if !strings.Contains(s, "name: plain") {
 		t.Fatalf("missing name in file: %s", s)
 	}
-	if !strings.Contains(s, "x: y") {
+	if !strings.Contains(s, "x: \"y\"") {
 		t.Fatalf("missing data in file: %s", s)
 	}
 }
@@ -466,7 +466,7 @@ func TestWriteK8sResourceJQ_RemoveFieldWithJQFilter(t *testing.T) {
 		t.Fatalf("read written file error: %v", err)
 	}
 	s := string(content)
-	fmt.Println(s)
+	// fmt.Println(s)
 	if strings.Contains(s, "replicas") {
 		t.Fatalf("expected replicas field to be removed, but found in file: %s", s)
 	}
@@ -516,7 +516,7 @@ func TestWriteK8sResourceJQ_ModifyFieldWithJQFilter(t *testing.T) {
 		t.Fatalf("read written file error: %v", err)
 	}
 	s := string(content)
-	fmt.Println(s)
+	// fmt.Println(s)
 	if !strings.Contains(s, "replicas: 5") {
 		t.Fatalf("expected replicas field to be modified to 5, but got file: %s", s)
 	}
@@ -579,7 +579,7 @@ func TestWriteK8sResourceJQ_MultipleJQFilters(t *testing.T) {
 		t.Fatalf("read written file error: %v", err)
 	}
 	s := string(content)
-	fmt.Println(s)
+	//  ntln(s)
 	if !strings.Contains(s, "replicas: 4") {
 		t.Fatalf("expected replicas field to be modified to 4, but got file: %s", s)
 	}

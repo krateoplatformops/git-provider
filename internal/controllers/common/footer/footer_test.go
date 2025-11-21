@@ -1,6 +1,7 @@
 package footer
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -41,7 +42,7 @@ func makeTestLocalResource() *localResourcev1alpha1.LocalResource {
 func TestLocalResourceCommitFooterAndParse(t *testing.T) {
 	cr := makeTestLocalResource()
 
-	footerStr, err := LocalResourceCommitFooter(cr)
+	footerStr, err := LocalResourceCommitFooter(context.TODO(), cr, nil)
 	if err != nil {
 		t.Fatalf("LocalResourceCommitFooter returned error: %v", err)
 	}
@@ -62,7 +63,7 @@ func TestLocalResourceCommitFooterAndParse(t *testing.T) {
 		t.Fatalf("name mismatch: got %q want %q", name, cr.GetName())
 	}
 
-	expectedHash, err := CalculateLocalResourceSpecHash(cr)
+	expectedHash, err := CalculateLocalResourceSpecHash(context.TODO(), cr, nil)
 	if err != nil {
 		t.Fatalf("CalculateLocalResourceSpecHash returned error: %v", err)
 	}
@@ -82,11 +83,11 @@ func TestCalculateLocalResourceSpecHash_Deterministic(t *testing.T) {
 	cr1 := makeTestLocalResource()
 	cr2 := makeTestLocalResource()
 
-	h1, err := CalculateLocalResourceSpecHash(cr1)
+	h1, err := CalculateLocalResourceSpecHash(context.TODO(), cr1, nil)
 	if err != nil {
 		t.Fatalf("calculateLocalResourceSpecHash returned error: %v", err)
 	}
-	h2, err := CalculateLocalResourceSpecHash(cr2)
+	h2, err := CalculateLocalResourceSpecHash(context.TODO(), cr2, nil)
 	if err != nil {
 		t.Fatalf("calculateLocalResourceSpecHash returned error: %v", err)
 	}
@@ -96,7 +97,7 @@ func TestCalculateLocalResourceSpecHash_Deterministic(t *testing.T) {
 
 	// change a field and expect a different hash
 	cr2.Spec.ToRepo.Path = "different-path"
-	h3, err := CalculateLocalResourceSpecHash(cr2)
+	h3, err := CalculateLocalResourceSpecHash(context.TODO(), cr2, nil)
 	if err != nil {
 		t.Fatalf("calculateLocalResourceSpecHash returned error: %v", err)
 	}

@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -18,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	jsonpatch "github.com/evanphx/json-patch/v5"
 	"github.com/krateoplatformops/git-provider/apis"
 	"github.com/krateoplatformops/git-provider/apis/localresource/v1alpha1"
 	"github.com/krateoplatformops/git-provider/internal/controllers/common/option"
@@ -83,7 +85,7 @@ func TestMain(m *testing.M) {
 	}
 	defer cli.Close()
 
-	// var containerId string
+	var containerId string
 
 	giteaAdmin := "admin"
 	giteaAdminPassword := "admin123"
@@ -95,7 +97,6 @@ func TestMain(m *testing.M) {
 		// Start docker gitea instance
 		func(ctx context.Context, cfg *envconf.Config) (context.Context, error) {
 			// Crea il client Docker
-
 			tmpdir, err := os.MkdirTemp(os.TempDir(), "local-resource-test-gitea-*")
 			if err != nil {
 				panic(err)
@@ -217,7 +218,7 @@ func TestMain(m *testing.M) {
 			if err != nil {
 				panic(err)
 			}
-			// containerId = resp.ID
+			containerId = resp.ID
 
 			fmt.Printf("Container started successfully!\n")
 			fmt.Printf("Access Gitea at: https://localhost:443\n")
@@ -307,9 +308,9 @@ func TestMain(m *testing.M) {
 			return ctx, nil
 		},
 	).Finish(
-		// envfuncs.DeleteNamespace(namespace),
-		// envfuncs.TeardownCRDs(crdPath, "git.krateo.io_localresources.yaml"),
-		// envfuncs.DestroyCluster(clusterName),
+		envfuncs.DeleteNamespace(namespace),
+		envfuncs.TeardownCRDs(crdPath, "git.krateo.io_localresources.yaml"),
+		envfuncs.DestroyCluster(clusterName),
 		func(ctx context.Context, c *envconf.Config) (context.Context, error) {
 			if v := ctx.Value(stopKey{}); v != nil {
 				if stop, ok := v.(context.CancelFunc); ok {
@@ -318,14 +319,14 @@ func TestMain(m *testing.M) {
 				}
 			}
 
-			// _, err := cli.ContainerStop(ctx, containerId, client.ContainerStopOptions{})
-			// if err != nil {
-			// 	panic(err)
-			// }
-			// _, err = cli.ContainerRemove(ctx, containerId, client.ContainerRemoveOptions{})
-			// if err != nil {
-			// 	panic(err)
-			// }
+			_, err := cli.ContainerStop(ctx, containerId, client.ContainerStopOptions{})
+			if err != nil {
+				panic(err)
+			}
+			_, err = cli.ContainerRemove(ctx, containerId, client.ContainerRemoveOptions{})
+			if err != nil {
+				panic(err)
+			}
 			return ctx, nil
 		},
 	)
@@ -365,7 +366,7 @@ func TestController(t *testing.T) {
 		o := controller.Options{
 			Logger:                  log,
 			MaxConcurrentReconciles: 1,
-			PollInterval:            20 * time.Second,
+			PollInterval:            10 * time.Second,
 			GlobalRateLimiter:       ratelimiter.NewGlobalExponential(1*time.Second, 1*time.Minute),
 		}
 
@@ -499,6 +500,8 @@ spec:
 				t.Fatalf("Failed to create ConfigMap %s: %v", configMapResource.Name, err)
 			}
 
+			time.Sleep(5 * time.Second) // wait for the configmap to be created
+
 			r.WithNamespace(namespace)
 
 			for _, test := range toCreate {
@@ -571,6 +574,7 @@ spec:
 			filename   string
 			patch      string
 			expected   string
+			ref        bool
 			patchError bool
 		}{
 			{
@@ -588,9 +592,10 @@ spec:
 				expected: `Hello, Nginx v1.1.0!`,
 			},
 			{
+				ref:      true,
 				filename: "local_fromRef.yaml",
-				patch:    `[{"op": "replace", "path": "/spec/fromResource/fromRef/name", "value": "test-configmap"}]`,
-				expected: `testkey: testvalue`, // content of the configmap key
+				patch:    `[{"op": "replace", "path": "/data/testkey", "value": "test-update"}]`,
+				expected: `testkey: test-update`, // content of the configmap key
 			},
 			{
 				filename:   "local_fromString_syncEnabled_false.yaml",
@@ -640,13 +645,26 @@ spec:
 				t.Fatal(err)
 			}
 
-			err = r.Patch(ctx, &res, k8s.Patch{PatchType: types.JSONPatchType, Data: []byte(test.patch)})
-			if err != nil && test.patchError == false {
-				t.Fatalf("Failed to patch LocalResource %s: %v", res.Name, err)
+			// This only works for Configmap refs for now
+			if test.ref {
+				var refCm v1.ConfigMap
+				err = r.Get(ctx, res.Spec.FromResource.FromRef.Name, res.Spec.FromResource.FromRef.Namespace, &refCm)
+				if err != nil {
+					t.Fatalf("Failed to get referenced ConfigMap: %v", err)
+				}
+				err = r.Patch(ctx, &refCm, k8s.Patch{PatchType: types.JSONPatchType, Data: []byte(test.patch)})
+				if err != nil && test.patchError == false {
+					t.Fatalf("Failed to patch referenced ConfigMap %s: %v", refCm.Name, err)
+				}
+			} else {
+				err = r.Patch(ctx, &res, k8s.Patch{PatchType: types.JSONPatchType, Data: []byte(test.patch)})
+				if err != nil && test.patchError == false {
+					t.Fatalf("Failed to patch LocalResource %s: %v", res.Name, err)
+				}
 			}
 		}
 
-		time.Sleep(10 * time.Second) // wait for the controller to pick up the new resources
+		time.Sleep(30 * time.Second) // wait for the controller to pick up the new resources
 
 		// verify that the changes have been applied
 		for _, test := range toUpgrade {
@@ -701,7 +719,176 @@ spec:
 		}
 
 		return ctx
-	}).Assess("Test Delete", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+	}).Assess("Test Delete and Recreate", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+		toDeleteAndPatch := []struct {
+			filename   string
+			patch      string
+			expected   string
+			patchError bool
+			ref        bool
+		}{
+			{
+				filename: "local_fromYaml.yaml",
+				patch:    `[{"op": "replace", "path": "/spec/fromResource/fromYaml/spec/zipArchive", "value": true}]`,
+				expected: `zipArchive: true`,
+			},
+			{
+				filename: "local_fromString.yaml",
+				patch: `[{
+            "op": "replace",
+            "path": "/spec/fromResource/fromString",
+            "value": "Hello, Nginx v1.1.0!"
+        }]`,
+				expected: `Hello, Nginx v1.1.0!`,
+			},
+			{
+				ref:      true,
+				filename: "local_fromRef.yaml",
+				patch:    `[{"op": "replace", "path": "/data/testkey", "value": "test-recreate"}]`,
+				expected: `testkey: test-recreate`, // content of the configmap key
+			},
+			{
+				filename: "local_fromString_syncEnabled_false.yaml",
+				patch:    `[{"op": "replace","path": "/spec/fromResource/fromString","value": "Hello, World v2!"}]`,
+				expected: `kind: RemoteRepo
+apiVersion: test.com/v6
+metadata:
+  name: example-repo
+  namespace: default
+spec:
+  zipArchive: false
+  authMethod: generic
+  branch: main
+  placeholderTest: "42"`, // value should not change as syncEnabled is false
+			},
+			{
+				filename: "local_fromString_override_false.yaml",
+				patch:    `[{"op": "replace","path": "/spec/fromResource/fromString","value": "Overridden Value!"}]`,
+				expected: `kind: RemoteRepo
+apiVersion: test.com/v6
+metadata:
+  name: example-repo
+  namespace: default
+spec:
+  zipArchive: false
+  authMethod: generic
+  branch: main
+  placeholderTest: "42"`, // value should not change as override is false
+			},
+		}
+		r, err := resources.New(cfg.Client().RESTConfig())
+		if err != nil {
+			t.Fail()
+		}
+
+		for _, test := range toDeleteAndPatch {
+			var res v1alpha1.LocalResource
+			err := decoder.DecodeFile(
+				os.DirFS(filepath.Join(testdataPath)), test.filename,
+				&res,
+				decoder.MutateNamespace(namespace),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			err = r.Delete(ctx, &res)
+			if err != nil {
+				t.Fatalf("Failed to delete LocalResource %s: %v", res.Name, err)
+			}
+		}
+
+		time.Sleep(30 * time.Second) // wait for the controller to process deletions
+
+		// Now we recreate them with different specs and we check if values are overritten or not according to the specs
+		for _, test := range toDeleteAndPatch {
+			var res v1alpha1.LocalResource
+			err := decoder.DecodeFile(
+				os.DirFS(filepath.Join(testdataPath)), test.filename,
+				&res,
+				decoder.MutateNamespace(namespace),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if test.ref {
+				var refCm v1.ConfigMap
+				err = r.Get(ctx, res.Spec.FromResource.FromRef.Name, res.Spec.FromResource.FromRef.Namespace, &refCm)
+				if err != nil {
+					t.Fatalf("Failed to get referenced ConfigMap: %v", err)
+				}
+				err = r.Patch(ctx, &refCm, k8s.Patch{PatchType: types.JSONPatchType, Data: []byte(test.patch)})
+				if err != nil && test.patchError == false {
+					t.Fatalf("Failed to patch referenced ConfigMap %s: %v", refCm.Name, err)
+				}
+			} else {
+				// now we patch with the new spec to the resource (that does not exist in the cluster yet) so we need to change res object
+				err = applyPatchToCR(&res, test.patch)
+				if err != nil {
+					t.Fatalf("Failed to apply patch to LocalResource %s: %v", res.Name, err)
+				}
+			}
+
+			err = r.Create(ctx, &res)
+			if err != nil {
+				t.Fatalf("Failed to recreate LocalResource %s: %v", res.Name, err)
+			}
+		}
+
+		time.Sleep(15 * time.Second)
+
+		// verify that the changes have been applied
+		for _, test := range toDeleteAndPatch {
+			var res v1alpha1.LocalResource
+			err := decoder.DecodeFile(
+				os.DirFS(filepath.Join(testdataPath)), test.filename,
+				&res,
+				decoder.MutateNamespace(namespace),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			var updatedRes v1alpha1.LocalResource
+			err = r.Get(ctx, res.GetName(), res.GetNamespace(), &updatedRes)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// verify that the git-provider has updated the resource in the git repo
+			tr := &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			}
+			client := &http.Client{Transport: tr}
+			repoName := strings.TrimSuffix(strings.Split(res.Spec.ToRepo.Url, "/")[len(strings.Split(res.Spec.ToRepo.Url, "/"))-1], ".git")
+			url := fmt.Sprintf("https://localhost:443/api/v1/repos/admin/%s/contents/%s?ref=%s", repoName, res.Spec.FromResource.FileName, res.Spec.ToRepo.Branch)
+			req, _ := http.NewRequest("GET", url, nil)
+			req.SetBasicAuth("admin", "admin123")
+			resp, err := client.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("Expected status 200 OK, got %s calling %s", resp.Status, url)
+			}
+			// Check if the content matches the updated resource
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			bodyStr := string(body)
+
+			// The content is base64 encoded inside the "content" field
+			decodedContent, err := decodeGiteaContent(bodyStr)
+			if err != nil {
+				t.Fatalf("Failed to decode content for LocalResource %s: %v", res.Name, err)
+			}
+			if !strings.Contains(decodedContent, test.expected) {
+				t.Fatalf("Expected content to contain %q, but it was not found in response body: %s", test.expected, decodedContent)
+			}
+		}
 
 		return ctx
 	}).Feature()
@@ -730,4 +917,37 @@ func decodeGiteaContent(body string) (string, error) {
 	}
 
 	return string(decodedBytes), nil
+}
+
+// applyPatchToCR applies a JSON Patch (provided as a JSON string) to a Custom Resource.
+//
+// 'resource' must be a pointer to your CR structure (e.g., *v1alpha1.LocalResource).
+// 'patchString' is the JSON Patch in string format.
+// The function modifies 'resource' in place.
+func applyPatchToCR(resource interface{}, patchString string) error {
+	// 1. Convert the original CR into JSON bytes (Target Document)
+	originalJSON, err := json.Marshal(resource)
+	if err != nil {
+		return err
+	}
+
+	// 2. Decode the patch string into a Patch object
+	patch, err := jsonpatch.DecodePatch([]byte(patchString))
+	if err != nil {
+		return err
+	}
+
+	// 3. Apply the patch to the original JSON bytes
+	patchedJSON, err := patch.Apply(originalJSON)
+	if err != nil {
+		return err
+	}
+
+	// 4. Decode the patched JSON back into the resource structure
+	// This updates the value pointed to by 'resource'.
+	if err := json.Unmarshal(patchedJSON, resource); err != nil {
+		return err
+	}
+
+	return nil
 }

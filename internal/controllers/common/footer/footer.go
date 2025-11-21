@@ -1,12 +1,17 @@
 package footer
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+
 	localResourcev1alpha1 "github.com/krateoplatformops/git-provider/apis/localresource/v1alpha1"
 	hasher "github.com/krateoplatformops/git-provider/internal/tools/hash"
+	"k8s.io/client-go/dynamic"
 )
 
 type localResourceCommitFooter struct {
@@ -17,7 +22,7 @@ type localResourceCommitFooter struct {
 
 const localResourceCommitFooterPrefix = "Managed by git-provider LocalResource:"
 
-func CalculateLocalResourceSpecHash(cr *localResourcev1alpha1.LocalResource) (string, error) {
+func CalculateLocalResourceSpecHash(ctx context.Context, cr *localResourcev1alpha1.LocalResource, dyn dynamic.Interface) (string, error) {
 	hash := hasher.NewFNVObjectHash()
 	err := hash.SumHash(
 		cr.Spec.FromResource,
@@ -25,15 +30,48 @@ func CalculateLocalResourceSpecHash(cr *localResourcev1alpha1.LocalResource) (st
 		cr.Spec.ToRepo.Path,
 		cr.Spec.ToRepo.Branch,
 		cr.Spec.ToRepo.CloneFromBranch,
-		cr.Spec.PlaceholdersToOverride)
+		cr.Spec.PlaceholdersToOverride,
+	)
 	if err != nil {
 		return "", fmt.Errorf("unable to compute LocalResource spec hash: %w", err)
 	}
+
+	if cr.Spec.FromResource.FromRef != nil && dyn != nil {
+		// include the resource version of the referenced resource in the hash
+		gv, err := schema.ParseGroupVersion(cr.Spec.FromResource.FromRef.ApiVersion)
+		if err != nil {
+			return "", fmt.Errorf("unable to parse apiVersion %s of referenced resource: %w", cr.Spec.FromResource.FromRef.ApiVersion, err)
+		}
+		var cli dynamic.ResourceInterface
+		if cr.Spec.FromResource.FromRef.Namespace == "" {
+			cli = dyn.Resource(schema.GroupVersionResource{
+				Group:    gv.Group,
+				Version:  gv.Version,
+				Resource: cr.Spec.FromResource.FromRef.Resource,
+			})
+		} else {
+			cli = dyn.Resource(schema.GroupVersionResource{
+				Group:    gv.Group,
+				Version:  gv.Version,
+				Resource: cr.Spec.FromResource.FromRef.Resource,
+			}).Namespace(cr.Spec.FromResource.FromRef.Namespace)
+		}
+
+		u, err := cli.Get(ctx, cr.Spec.FromResource.FromRef.Name, metav1.GetOptions{})
+		if err != nil {
+			return "", fmt.Errorf("unable to get referenced resource %s/%s: %w", cr.Spec.FromResource.FromRef.Namespace, cr.Spec.FromResource.FromRef.Name, err)
+		}
+		err = hash.SumHash(u.GetResourceVersion())
+		if err != nil {
+			return "", fmt.Errorf("unable to compute LocalResource spec hash: %w", err)
+		}
+	}
+
 	return hash.GetHash(), nil
 }
 
-func LocalResourceCommitFooter(cr *localResourcev1alpha1.LocalResource) (string, error) {
-	hshString, err := CalculateLocalResourceSpecHash(cr)
+func LocalResourceCommitFooter(ctx context.Context, cr *localResourcev1alpha1.LocalResource, dyn dynamic.Interface) (string, error) {
+	hshString, err := CalculateLocalResourceSpecHash(ctx, cr, dyn)
 	if err != nil {
 		return "", fmt.Errorf("unable to compute LocalResource spec hash: %w", err)
 	}

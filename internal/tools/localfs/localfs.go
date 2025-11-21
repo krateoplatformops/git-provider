@@ -158,25 +158,28 @@ func (lfs LocalFS) WriteK8sResourceJQ(filename string, manifest runtime.RawExten
 			filename = fmt.Sprintf("%s_%s_%s.yaml", stringGVK, ures.GetName(), ures.GetNamespace())
 		}
 	}
-
-	// Apply jq filters sequentially
 	var processedJSON string
-	for _, filter := range jqFilters {
-		processedJSON, err = jqutil.Eval(context.Background(), jqutil.EvalOptions{
-			Query:        filter,
-			Data:         ures.Object,
-			Unquote:      false,
-			ModuleLoader: nil,
-		})
-		if err != nil {
-			return "", fmt.Errorf("applying jq filter '%s': %w", filter, err)
+	if len(jqFilters) > 0 {
+		// Apply jq filters sequentially
+		for _, filter := range jqFilters {
+			processedJSON, err = jqutil.Eval(context.Background(), jqutil.EvalOptions{
+				Query:        filter,
+				Data:         ures.Object,
+				Unquote:      false,
+				ModuleLoader: nil,
+			})
+			if err != nil {
+				return "", fmt.Errorf("applying jq filter '%s': %w", filter, err)
+			}
+			// Update ures.Object for the next iteration
+			ures.Object = make(map[string]any)
+			err = yaml.NewYAMLOrJSONDecoder(bytes.NewReader([]byte(processedJSON)), 1024).Decode(&ures.Object)
+			if err != nil {
+				return "", fmt.Errorf("decoding JSON after jq filter '%s': %w", filter, err)
+			}
 		}
-		// Update ures.Object for the next iteration
-		ures.Object = make(map[string]any)
-		err = yaml.NewYAMLOrJSONDecoder(bytes.NewReader([]byte(processedJSON)), 1024).Decode(&ures.Object)
-		if err != nil {
-			return "", fmt.Errorf("decoding JSON after jq filter '%s': %w", filter, err)
-		}
+	} else {
+		processedJSON = string(manifest.Raw)
 	}
 
 	scheme := runtime.NewScheme()

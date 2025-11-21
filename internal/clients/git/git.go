@@ -36,9 +36,9 @@ import (
 	"github.com/krateoplatformops/plumbing/ptr"
 )
 
-const (
-	commitAuthorEmail = "contact@krateo.io"
-	commitAuthorName  = "krateo-git-provider"
+var (
+	CommitAuthorEmail = "contact@krateo.io"
+	CommitAuthorName  = "krateo-git-provider"
 )
 
 var (
@@ -673,8 +673,8 @@ func (s *Repo) Commit(path, msg string, opt *IndexOptions) (plumbing.Hash, error
 	// git commit -m $message
 	hash, err := wt.Commit(msg, &git.CommitOptions{
 		Author: &object.Signature{
-			Name:  commitAuthorName,
-			Email: commitAuthorEmail,
+			Name:  CommitAuthorName,
+			Email: CommitAuthorEmail,
 			When:  time.Now(),
 		},
 	})

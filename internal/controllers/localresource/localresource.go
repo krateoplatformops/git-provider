@@ -65,6 +65,9 @@ func Setup(mgr ctrl.Manager, o option.SetupOptions) error {
 		reconciler.WithTimeout(o.Controller.Timeout),
 	)
 
+	git.CommitAuthorEmail = o.Git.CommitAuthorEmail
+	git.CommitAuthorName = o.Git.CommitAuthorName
+
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(name).
 		WithOptions(o.Controller.ForControllerRuntime()).
@@ -192,7 +195,7 @@ func (e *external) Observe(ctx context.Context, mg resource.Managed) (reconciler
 			hasGitProviderPreviuslyCommitted = true
 			e.log.Debug("Found previous commit from git-provider for this LocalResource", "commitId", commit.Hash.String())
 		}
-		currentSpecHash, err := footer.CalculateLocalResourceSpecHash(cr)
+		currentSpecHash, err := footer.CalculateLocalResourceSpecHash(ctx, cr, e.dynamic)
 		if err != nil {
 			return false
 		}
@@ -398,7 +401,7 @@ func (e *external) SyncLocalResources(ctx context.Context, cr *localResourcev1al
 		"fromPath", fromPath,
 		"toPath", toPath)
 
-	commitFooter, err := footer.LocalResourceCommitFooter(cr)
+	commitFooter, err := footer.LocalResourceCommitFooter(ctx, cr, e.dynamic)
 	if err != nil {
 		return fmt.Errorf("unable to compute LocalResource commit footer: %w", err)
 	}

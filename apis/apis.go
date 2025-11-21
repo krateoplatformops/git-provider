@@ -3,6 +3,7 @@ package apis
 import (
 	"k8s.io/apimachinery/pkg/runtime"
 
+	localresourcev1alpha1 "github.com/krateoplatformops/git-provider/apis/localresource/v1alpha1"
 	repov1alpha1 "github.com/krateoplatformops/git-provider/apis/repo/v1alpha1"
 )
 
@@ -10,6 +11,7 @@ func init() {
 	// Register the types with the Scheme so the components can map objects to GroupVersionKinds and back
 	AddToSchemes = append(AddToSchemes,
 		repov1alpha1.SchemeBuilder.AddToScheme,
+		localresourcev1alpha1.SchemeBuilder.AddToScheme,
 	)
 }
 

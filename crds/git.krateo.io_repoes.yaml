@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.17.1
+    controller-gen.kubebuilder.io/version: v0.19.0
   name: repoes.git.krateo.io
 spec:
   group: git.krateo.io
@@ -42,7 +42,9 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: A Repo is a managed resource that represents a Krateo Git Repository
+        description: |-
+          A Repo is a managed resource that represents a Krateo Git Repository
+          // +kubebuilder:deprecatedversion:warning="v1alpha1 will be removed in a future release. Please migrate to Kind RemoteRepo"
         properties:
           apiVersion:
             description: |-

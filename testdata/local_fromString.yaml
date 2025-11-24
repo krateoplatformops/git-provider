@@ -24,7 +24,9 @@ spec:
         authMethod: generic
         branch: main
         placeholderTest: "{{ .example }}"
-    
+
+  createCommitMessage: "chore: test create files in remote repository"
+  updateCommitMessage: "chore: test update files in remote repository"
 
   toRepo:
     branch: string
@@ -40,4 +42,4 @@ spec:
         key: username
         name: gitea-repo-creds
         namespace: test-system
-    url: https://localhost:443/admin/test-repo.git
+    url: https://localhost:8443/admin/test-repo.git

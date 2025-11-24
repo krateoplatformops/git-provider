@@ -140,7 +140,7 @@ func TestMain(m *testing.M) {
 				httpsPort: []network.PortBinding{
 					{
 						HostIP:   netip.AddrFrom4([4]byte{0, 0, 0, 0}),
-						HostPort: "3443",
+						HostPort: "8443",
 					},
 				},
 			}
@@ -161,7 +161,7 @@ func TestMain(m *testing.M) {
 					// HTTPS with self-signed certs
 					"GITEA__server__DOMAIN=localhost",
 					"GITEA__server__HTTP_PORT=443",
-					"GITEA__server__ROOT_URL=https://localhost:3443",
+					"GITEA__server__ROOT_URL=https://localhost:8443",
 					"GITEA__server__PROTOCOL=https",
 					"GITEA__server__CERT_FILE=/data/cert.pem",
 					"GITEA__server__KEY_FILE=/data/key.pem",
@@ -221,7 +221,7 @@ func TestMain(m *testing.M) {
 			containerId = resp.ID
 
 			fmt.Printf("Container started successfully!\n")
-			fmt.Printf("Access Gitea at: https://localhost:3443\n")
+			fmt.Printf("Access Gitea at: https://localhost:8443\n")
 
 			// Wait for Gitea to be ready
 			err = waitForGitea(ctx)
@@ -239,7 +239,7 @@ func TestMain(m *testing.M) {
 			client := &http.Client{Transport: tr}
 
 			// Con Basic Auth
-			req2, _ := http.NewRequest("GET", "https://localhost:3443/api/v1/user", nil)
+			req2, _ := http.NewRequest("GET", "https://localhost:8443/api/v1/user", nil)
 			req2.SetBasicAuth("admin", "admin123")
 
 			resp2, err := client.Do(req2)
@@ -259,7 +259,7 @@ func TestMain(m *testing.M) {
 			  "auto_init": true,
 			  "readme": "Default"
 			}`
-			req3, _ := http.NewRequest("POST", "https://localhost:3443/api/v1/user/repos", strings.NewReader(req3Body))
+			req3, _ := http.NewRequest("POST", "https://localhost:8443/api/v1/user/repos", strings.NewReader(req3Body))
 			req3.Header.Set("Content-Type", "application/json")
 			req3.SetBasicAuth(giteaAdmin, giteaAdminPassword)
 			resp3, err := client.Do(req3)
@@ -543,7 +543,7 @@ spec:
 				}
 				client := &http.Client{Transport: tr}
 				repoName := strings.TrimSuffix(strings.Split(res.Spec.ToRepo.Url, "/")[len(strings.Split(res.Spec.ToRepo.Url, "/"))-1], ".git")
-				url := fmt.Sprintf("https://localhost:3443/api/v1/repos/admin/%s/contents/%s?ref=%s", repoName, res.Spec.FromResource.FileName, res.Spec.ToRepo.Branch)
+				url := fmt.Sprintf("https://localhost:8443/api/v1/repos/admin/%s/contents/%s?ref=%s", repoName, res.Spec.FromResource.FileName, res.Spec.ToRepo.Branch)
 				req, _ := http.NewRequest("GET", url, nil)
 				req.SetBasicAuth("admin", "admin123")
 				resp, err := client.Do(req)
@@ -693,7 +693,7 @@ spec:
 			}
 			client := &http.Client{Transport: tr}
 			repoName := strings.TrimSuffix(strings.Split(res.Spec.ToRepo.Url, "/")[len(strings.Split(res.Spec.ToRepo.Url, "/"))-1], ".git")
-			url := fmt.Sprintf("https://localhost:3443/api/v1/repos/admin/%s/contents/%s?ref=%s", repoName, res.Spec.FromResource.FileName, res.Spec.ToRepo.Branch)
+			url := fmt.Sprintf("https://localhost:8443/api/v1/repos/admin/%s/contents/%s?ref=%s", repoName, res.Spec.FromResource.FileName, res.Spec.ToRepo.Branch)
 			req, _ := http.NewRequest("GET", url, nil)
 			req.SetBasicAuth("admin", "admin123")
 			resp, err := client.Do(req)
@@ -865,7 +865,7 @@ spec:
 			}
 			client := &http.Client{Transport: tr}
 			repoName := strings.TrimSuffix(strings.Split(res.Spec.ToRepo.Url, "/")[len(strings.Split(res.Spec.ToRepo.Url, "/"))-1], ".git")
-			url := fmt.Sprintf("https://localhost:3443/api/v1/repos/admin/%s/contents/%s?ref=%s", repoName, res.Spec.FromResource.FileName, res.Spec.ToRepo.Branch)
+			url := fmt.Sprintf("https://localhost:8443/api/v1/repos/admin/%s/contents/%s?ref=%s", repoName, res.Spec.FromResource.FileName, res.Spec.ToRepo.Branch)
 			req, _ := http.NewRequest("GET", url, nil)
 			req.SetBasicAuth("admin", "admin123")
 			resp, err := client.Do(req)
@@ -962,7 +962,7 @@ func waitForGitea(ctx context.Context) error {
 	client := &http.Client{Transport: tr}
 
 	// Con Basic Auth (necessario per l'endpoint /api/v1/user)
-	req, _ := http.NewRequest("GET", "https://localhost:3443/api/v1/user", nil)
+	req, _ := http.NewRequest("GET", "https://localhost:8443/api/v1/user", nil)
 	req.SetBasicAuth("admin", "admin123")
 
 	const maxAttempts = 60
@@ -976,7 +976,11 @@ func waitForGitea(ctx context.Context) error {
 			return nil // Successo
 		}
 
-		fmt.Printf("Attempt %d/%d: Gitea not ready yet (Status: %s, Error: %v). Retrying in %v...\n", i+1, maxAttempts, resp.Status, err, delay)
+		if resp != nil {
+			fmt.Printf("Attempt %d/%d: Gitea not ready yet (Status: %s, Error: %v). Retrying in %v...\n", i+1, maxAttempts, resp.Status, err, delay)
+		} else {
+			fmt.Printf("Attempt %d/%d: Gitea not ready yet (Error: %v). Retrying in %v...\n", i+1, maxAttempts, err, delay)
+		}
 
 		if resp != nil {
 			resp.Body.Close()

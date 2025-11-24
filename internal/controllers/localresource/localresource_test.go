@@ -224,7 +224,7 @@ func TestMain(m *testing.M) {
 			fmt.Printf("Access Gitea at: https://localhost:443\n")
 
 			// Wait for Gitea to be ready
-			time.Sleep(10 * time.Second)
+			time.Sleep(60 * time.Second)
 			return ctx, nil
 		},
 

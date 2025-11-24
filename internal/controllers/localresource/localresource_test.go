@@ -224,7 +224,10 @@ func TestMain(m *testing.M) {
 			fmt.Printf("Access Gitea at: https://localhost:3443\n")
 
 			// Wait for Gitea to be ready
-			time.Sleep(60 * time.Second)
+			err = waitForGitea(ctx)
+			if err != nil {
+				panic(err)
+			}
 			return ctx, nil
 		},
 
@@ -950,4 +953,36 @@ func applyPatchToCR(resource interface{}, patchString string) error {
 	}
 
 	return nil
+}
+
+func waitForGitea(ctx context.Context) error {
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	client := &http.Client{Transport: tr}
+
+	// Con Basic Auth (necessario per l'endpoint /api/v1/user)
+	req, _ := http.NewRequest("GET", "https://localhost:3443/api/v1/user", nil)
+	req.SetBasicAuth("admin", "admin123")
+
+	const maxAttempts = 60
+	const delay = 5 * time.Second
+
+	for i := 0; i < maxAttempts; i++ {
+		resp, err := client.Do(req)
+		if err == nil && resp.StatusCode == http.StatusOK {
+			resp.Body.Close()
+			fmt.Println("Gitea is ready!")
+			return nil // Successo
+		}
+
+		fmt.Printf("Attempt %d/%d: Gitea not ready yet (Status: %s, Error: %v). Retrying in %v...\n", i+1, maxAttempts, resp.Status, err, delay)
+
+		if resp != nil {
+			resp.Body.Close()
+		}
+		time.Sleep(delay)
+	}
+
+	return fmt.Errorf("Gitea failed to become ready after %v attempts", maxAttempts)
 }

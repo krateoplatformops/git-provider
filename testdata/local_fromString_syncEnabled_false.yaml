@@ -41,5 +41,5 @@ spec:
         key: username
         name: gitea-repo-creds
         namespace: test-system
-    url: https://localhost:8443/admin/test-repo.git
+    url: https://127.0.0.1:8443/admin/test-repo.git
 

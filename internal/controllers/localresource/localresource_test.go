@@ -189,6 +189,7 @@ func TestMain(m *testing.M) {
 			}
 
 			hostConfig := &container.HostConfig{
+				NetworkMode:  "host",
 				PortBindings: portBinding,
 				RestartPolicy: container.RestartPolicy{
 					Name: "always",

@@ -127,19 +127,19 @@ func TestMain(m *testing.M) {
 			portBinding := network.PortMap{
 				containerPort: []network.PortBinding{
 					{
-						HostIP:   netip.AddrFrom4([4]byte{0, 0, 0, 0}),
+						HostIP:   netip.AddrFrom4([4]byte{127, 0, 0, 1}),
 						HostPort: "3000",
 					},
 				},
 				sshPort: []network.PortBinding{
 					{
-						HostIP:   netip.AddrFrom4([4]byte{0, 0, 0, 0}),
+						HostIP:   netip.AddrFrom4([4]byte{127, 0, 0, 1}),
 						HostPort: "2222",
 					},
 				},
 				httpsPort: []network.PortBinding{
 					{
-						HostIP:   netip.AddrFrom4([4]byte{0, 0, 0, 0}),
+						HostIP:   netip.AddrFrom4([4]byte{127, 0, 0, 1}),
 						HostPort: "8443",
 					},
 				},

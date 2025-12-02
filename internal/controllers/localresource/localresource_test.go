@@ -66,6 +66,11 @@ const (
 	namespace = "test-system"
 )
 
+var (
+	giteaUsername = "admin"
+	giteaPassword = "admin123"
+)
+
 func TestMain(m *testing.M) {
 	xenv.SetTestMode(true)
 
@@ -86,9 +91,6 @@ func TestMain(m *testing.M) {
 	defer cli.Close()
 
 	var containerId string
-
-	giteaAdmin := "admin"
-	giteaAdminPassword := "admin123"
 
 	testenv.Setup(
 		envfuncs.CreateCluster(kindCluster, clusterName),
@@ -167,9 +169,6 @@ func TestMain(m *testing.M) {
 					"GITEA__server__KEY_FILE=/data/key.pem",
 				},
 				Entrypoint: []string{"/bin/sh", "-c"},
-				// Cmd: []string{
-				// 	fmt.Sprintf("echo 'su-exec git /usr/local/bin/gitea migrate' >> /etc/s6/gitea/setup\necho 'su-exec git /usr/local/bin/gitea admin user create --username '%s' --password '%s' --email admin@local --admin --must-change-password=false' >> /etc/s6/gitea/setup\n/usr/bin/entrypoint /usr/bin/s6-svscan /etc/s6", giteaAdmin, giteaAdminPassword),
-				// },
 				Cmd: []string{
 					fmt.Sprintf(`
             # Genera certificati self-signed se non esistono
@@ -184,12 +183,12 @@ func TestMain(m *testing.M) {
             
             # Avvia Gitea
             /usr/bin/entrypoint /usr/bin/s6-svscan /etc/s6
-        `, giteaAdmin, giteaAdminPassword),
+        `, giteaUsername, giteaPassword),
 				},
 			}
 
 			hostConfig := &container.HostConfig{
-				NetworkMode:  "host",
+				// NetworkMode:  "host",
 				PortBindings: portBinding,
 				RestartPolicy: container.RestartPolicy{
 					Name: "always",
@@ -241,7 +240,7 @@ func TestMain(m *testing.M) {
 
 			// Con Basic Auth
 			req2, _ := http.NewRequest("GET", "https://127.0.0.1:8443/api/v1/user", nil)
-			req2.SetBasicAuth("admin", "admin123")
+			req2.SetBasicAuth(giteaUsername, giteaPassword)
 
 			resp2, err := client.Do(req2)
 			if err != nil {
@@ -262,7 +261,7 @@ func TestMain(m *testing.M) {
 			}`
 			req3, _ := http.NewRequest("POST", "https://127.0.0.1:8443/api/v1/user/repos", strings.NewReader(req3Body))
 			req3.Header.Set("Content-Type", "application/json")
-			req3.SetBasicAuth(giteaAdmin, giteaAdminPassword)
+			req3.SetBasicAuth(giteaUsername, giteaPassword)
 			resp3, err := client.Do(req3)
 			if err != nil {
 				panic(err)
@@ -546,7 +545,7 @@ spec:
 				repoName := strings.TrimSuffix(strings.Split(res.Spec.ToRepo.Url, "/")[len(strings.Split(res.Spec.ToRepo.Url, "/"))-1], ".git")
 				url := fmt.Sprintf("https://127.0.0.1:8443/api/v1/repos/admin/%s/contents/%s?ref=%s", repoName, res.Spec.FromResource.FileName, res.Spec.ToRepo.Branch)
 				req, _ := http.NewRequest("GET", url, nil)
-				req.SetBasicAuth("admin", "admin123")
+				req.SetBasicAuth(giteaUsername, giteaPassword)
 				resp, err := client.Do(req)
 				if err != nil {
 					t.Fatal(err)
@@ -696,7 +695,7 @@ spec:
 			repoName := strings.TrimSuffix(strings.Split(res.Spec.ToRepo.Url, "/")[len(strings.Split(res.Spec.ToRepo.Url, "/"))-1], ".git")
 			url := fmt.Sprintf("https://127.0.0.1:8443/api/v1/repos/admin/%s/contents/%s?ref=%s", repoName, res.Spec.FromResource.FileName, res.Spec.ToRepo.Branch)
 			req, _ := http.NewRequest("GET", url, nil)
-			req.SetBasicAuth("admin", "admin123")
+			req.SetBasicAuth(giteaUsername, giteaPassword)
 			resp, err := client.Do(req)
 			if err != nil {
 				t.Fatal(err)
@@ -868,7 +867,7 @@ spec:
 			repoName := strings.TrimSuffix(strings.Split(res.Spec.ToRepo.Url, "/")[len(strings.Split(res.Spec.ToRepo.Url, "/"))-1], ".git")
 			url := fmt.Sprintf("https://127.0.0.1:8443/api/v1/repos/admin/%s/contents/%s?ref=%s", repoName, res.Spec.FromResource.FileName, res.Spec.ToRepo.Branch)
 			req, _ := http.NewRequest("GET", url, nil)
-			req.SetBasicAuth("admin", "admin123")
+			req.SetBasicAuth(giteaUsername, giteaPassword)
 			resp, err := client.Do(req)
 			if err != nil {
 				t.Fatal(err)
@@ -964,7 +963,7 @@ func waitForGitea(ctx context.Context) error {
 
 	// Con Basic Auth (necessario per l'endpoint /api/v1/user)
 	req, _ := http.NewRequest("GET", "https://127.0.0.1:8443/api/v1/user", nil)
-	req.SetBasicAuth("admin", "admin123")
+	req.SetBasicAuth(giteaUsername, giteaPassword)
 
 	const maxAttempts = 60
 	const delay = 5 * time.Second

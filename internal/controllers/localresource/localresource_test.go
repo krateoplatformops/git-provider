@@ -171,14 +171,15 @@ func TestMain(m *testing.M) {
 				Entrypoint: []string{"/bin/sh", "-c"},
 				Cmd: []string{
 					fmt.Sprintf(`
-			chown -R 1000:1000 /data
 			
             # Generate self-signed certificates if they don't exist
             if [ ! -f /data/cert.pem ]; then
                 echo "Generating self-signed certificates..."
                 cd /data && /usr/local/bin/gitea cert --host localhost,127.0.0.1 --ca
             fi
-            
+            			
+			chown -R 1000:1000 /data
+
             # Setup Gitea
             echo 'su-exec git /usr/local/bin/gitea migrate' >> /etc/s6/gitea/setup
             echo 'su-exec git /usr/local/bin/gitea admin user create --username %s --password %s --email admin@local --admin --must-change-password=false' >> /etc/s6/gitea/setup

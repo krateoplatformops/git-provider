@@ -188,7 +188,6 @@ func TestMain(m *testing.M) {
 			}
 
 			hostConfig := &container.HostConfig{
-				// NetworkMode:  "host",
 				PortBindings: portBinding,
 				RestartPolicy: container.RestartPolicy{
 					Name: "always",
@@ -213,6 +212,28 @@ func TestMain(m *testing.M) {
 			}
 
 			fmt.Printf("Container created: %s\n", resp.ID)
+
+			// Print the network settings of the container
+			networkSettings, err := cli.ContainerInspect(ctx, resp.ID, client.ContainerInspectOptions{})
+			if err != nil {
+				panic(err)
+			}
+			r, _ := networkSettings.Raw.MarshalJSON()
+			fmt.Printf("Network settings: %+v\n", r)
+
+			// Print the container logs for debugging purposes
+			go func() {
+				logsReader, err := cli.ContainerLogs(ctx, resp.ID, client.ContainerLogsOptions{
+					ShowStdout: true,
+					ShowStderr: true,
+					Follow:     true,
+				})
+				if err != nil {
+					panic(err)
+				}
+				defer logsReader.Close()
+				io.Copy(os.Stdout, logsReader)
+			}()
 
 			_, err = cli.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{})
 			if err != nil {

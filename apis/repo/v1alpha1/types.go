@@ -119,6 +119,7 @@ type RepoStatus struct {
 // +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,categories={git,krateo}
+/*// +kubebuilder:deprecatedversion:warning="v1alpha1 will be removed in a future release. Please migrate to Kind RemoteRepo"*/
 type Repo struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

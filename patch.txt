@@ -1,0 +1,4 @@
+credo sia irrelivante il meccanismo di evitare commit duplicati nella history con opzioni tipo syncEnabled e override attive. 
+
+L'unico caso in cui ha effettivamente senso evitare di pushare codice se già stato pushato in passato è con ovveride a false e syncEnabled a false. 
+In questo caso basterebbe leggere i commit message nella repo e verificare che git-provider abbia pushato in precedenza (si potrebbe sfruttare direttamente il commit message iniettando un digest delle spec della CR) 

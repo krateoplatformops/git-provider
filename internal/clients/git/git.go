@@ -396,7 +396,7 @@ func Clone(opts CloneOptions) (*Repo, error) {
 			Auth:            opts.Auth,
 			InsecureSkipTLS: opts.Insecure,
 		}
-		if opts.AlternativeBranch != nil {
+		if opts.AlternativeBranch != nil && ptr.Deref(opts.AlternativeBranch, "") != "" {
 			isOrphan = false
 			cloneOpts.ReferenceName = plumbing.NewBranchReferenceName(ptr.Deref(opts.AlternativeBranch, ""))
 			cloneOpts.SingleBranch = true

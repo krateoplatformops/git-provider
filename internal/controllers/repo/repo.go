@@ -213,13 +213,18 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 
 	spec := cr.Spec.DeepCopy()
 
+	var alternativeBranch *string
+	if strings.TrimSpace(spec.ToRepo.CloneFromBranch) != "" {
+		alternativeBranch = ptr.To(spec.ToRepo.CloneFromBranch)
+	}
+
 	toRepo, err := git.Clone(git.CloneOptions{
 		URL:                     spec.ToRepo.Url,
 		Auth:                    e.cfg.ToRepoCreds,
 		Insecure:                e.cfg.Insecure,
 		UnsupportedCapabilities: e.cfg.UnsupportedCapabilities,
 		Branch:                  spec.ToRepo.Branch,
-		AlternativeBranch:       ptr.To(cr.Spec.ToRepo.CloneFromBranch),
+		AlternativeBranch:       alternativeBranch,
 		GitCookies:              e.cfg.ToRepoCookieFile,
 		HomeDir:                 homeDir, // Use the configured home directory for temporary files
 	})

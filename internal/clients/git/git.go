@@ -396,7 +396,7 @@ func Clone(opts CloneOptions) (*Repo, error) {
 			Auth:            opts.Auth,
 			InsecureSkipTLS: opts.Insecure,
 		}
-		if opts.AlternativeBranch != nil {
+		if opts.AlternativeBranch != nil && strings.TrimSpace(ptr.Deref(opts.AlternativeBranch, "")) != "" {
 			isOrphan = false
 			cloneOpts.ReferenceName = plumbing.NewBranchReferenceName(ptr.Deref(opts.AlternativeBranch, ""))
 			cloneOpts.SingleBranch = true
@@ -572,7 +572,7 @@ func (s *Repo) Commit(path, msg string, opt *IndexOptions) (string, error) {
 		},
 	})
 	if err != nil {
-		return "", NoErrAlreadyUpToDate
+		return "", fmt.Errorf("failed to commit worktree: %w", err)
 	}
 
 	return hash.String(), nil

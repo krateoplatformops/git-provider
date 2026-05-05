@@ -4,6 +4,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/go-git/go-git/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -127,6 +128,66 @@ func TestGetLatestCommit(t *testing.T) {
 	expected := "6ecf0ef2c2dffb796033e5a02219af86ec6584e5"
 	assert.Equal(t, expected, commit)
 }
+
+func TestCloneOrphan(t *testing.T) {
+	baseRepo := BaseSuite{}
+	baseRepo.BuildBasicRepository()
+
+	// Clone a non-existent branch without alternative
+	repo, err := Clone(CloneOptions{
+		URL:    baseRepo.GetBasicLocalRepositoryURL(),
+		Branch: "non-existent",
+	})
+	require.NoError(t, err)
+	defer repo.Cleanup()
+
+	assert.Equal(t, "non-existent", repo.CurrentBranch())
+	assert.True(t, *repo.isNewBranch)
+
+	// Check if it's orphan (no commits)
+	_, err = repo.repo.Log(&git.LogOptions{})
+	assert.Error(t, err) // Should be "reference not found" or similar for orphan branch
+}
+
+func TestCloneOrphanWithEmptyAlternative(t *testing.T) {
+	baseRepo := BaseSuite{}
+	baseRepo.BuildBasicRepository()
+
+	// Clone a non-existent branch with empty alternative
+	empty := ""
+	repo, err := Clone(CloneOptions{
+		URL:               baseRepo.GetBasicLocalRepositoryURL(),
+		Branch:            "non-existent",
+		AlternativeBranch: &empty,
+	})
+	require.NoError(t, err)
+	defer repo.Cleanup()
+
+	assert.Equal(t, "non-existent", repo.CurrentBranch())
+	assert.True(t, *repo.isNewBranch)
+
+	// Check if it's orphan (no commits)
+	_, err = repo.repo.Log(&git.LogOptions{})
+	assert.Error(t, err)
+}
+
+func TestCommitError(t *testing.T) {
+	baseRepo := BaseSuite{}
+	baseRepo.BuildBasicRepository()
+
+	repo, err := Clone(CloneOptions{
+		URL:    baseRepo.GetBasicLocalRepositoryURL(),
+		Branch: "master",
+	})
+	require.NoError(t, err)
+	defer repo.Cleanup()
+
+	// Try to commit without adding anything and ensure it returns NoErrAlreadyUpToDate
+	_, err = repo.Commit("non-existent.txt", "message", &IndexOptions{OriginRepo: repo})
+	assert.Error(t, err)
+	assert.NotEqual(t, NoErrAlreadyUpToDate, err)
+}
+
 func TestPush(t *testing.T) {
 	baseRepo := BaseSuite{}
 	baseRepo.BuildBasicRepository()

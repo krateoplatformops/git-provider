@@ -316,7 +316,7 @@ func (co *Copier) setKrateoIgnore() error {
 }
 
 func (co *Copier) setTargetIgnore() error {
-	if _, err := co.fromFS.Stat(co.targetCopyPath); err == nil {
+	if _, err := co.toFS.Stat(co.targetCopyPath); err == nil {
 		var flist []string
 		err = loadFilesFromPath(co.toFS, co.targetCopyPath, &flist)
 		if err != nil {

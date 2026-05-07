@@ -115,11 +115,6 @@ func TestTargetIgnoreSkipsExisting(t *testing.T) {
 	writeFile(t, from, "/src/skip.txt", "from-skip")
 	writeFile(t, from, "/src/keep.txt", "from-keep")
 
-	// create target dir in FROM FS so setTargetIgnore will proceed to load files from TO FS
-	if err := from.MkdirAll("/dst", 0o755); err != nil {
-		t.Fatalf("mkdirall from:/dst: %v", err)
-	}
-
 	// create an existing file in target (TO FS) that should be considered for ignoring
 	writeFile(t, to, "/dst/skip.txt", "to-skip-original")
 

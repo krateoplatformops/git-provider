@@ -7,10 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/pkg/errors"
-
 	commonv1 "github.com/krateoplatformops/provider-runtime/apis/common/v1"
-	"k8s.io/client-go/tools/record"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -27,14 +24,19 @@ import (
 	"github.com/krateoplatformops/git-provider/internal/clients/git"
 	"github.com/krateoplatformops/git-provider/internal/controllers/common/option"
 	"github.com/krateoplatformops/git-provider/internal/tools/copier"
+	"github.com/krateoplatformops/git-provider/internal/tools/template"
+	plumbingevent "github.com/krateoplatformops/plumbing/kubeutil/event"
+	"github.com/krateoplatformops/plumbing/kubeutil/eventrecorder"
 	"github.com/krateoplatformops/plumbing/ptr"
-
-	corev1 "k8s.io/api/core/v1"
+	record "k8s.io/client-go/tools/events"
 )
 
-const (
-	errNotRepo = "managed resource is not a repo custom resource"
+var (
+	errNotRepo = fmt.Errorf("managed resource is not a repo custom resource")
+	homeDir    string
 )
+
+const AnnotationTemplatingEngine = "krateo.io/templating-engine"
 
 // Setup adds a controller that reconciles Token managed resources.
 func Setup(mgr ctrl.Manager, o option.SetupOptions) error {
@@ -42,7 +44,10 @@ func Setup(mgr ctrl.Manager, o option.SetupOptions) error {
 
 	log := o.Controller.Logger.WithValues("controller", name)
 
-	recorder := mgr.GetEventRecorderFor(name)
+	recorder, err := eventrecorder.Create(context.Background(), mgr.GetConfig(), name, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create event recorder: %w", err)
+	}
 
 	r := reconciler.NewReconciler(mgr,
 		resource.ManagedKind(repov1alpha1.RepoGroupVersionKind),
@@ -53,7 +58,7 @@ func Setup(mgr ctrl.Manager, o option.SetupOptions) error {
 		}),
 		reconciler.WithPollInterval(o.Controller.PollInterval),
 		reconciler.WithLogger(log),
-		reconciler.WithRecorder(event.NewAPIRecorder(recorder)),
+		reconciler.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))),
 		reconciler.WithTimeout(o.Controller.Timeout),
 	)
 
@@ -73,7 +78,7 @@ type connector struct {
 func (c *connector) Connect(ctx context.Context, mg resource.Managed) (reconciler.ExternalClient, error) {
 	cr, ok := mg.(*repov1alpha1.Repo)
 	if !ok {
-		return nil, errors.New(errNotRepo)
+		return nil, errNotRepo
 	}
 
 	cfg, err := loadExternalClientOpts(ctx, c.kube, cr)
@@ -88,11 +93,16 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (reconcile
 
 	log := c.log.WithValues("name", cr.Name, "namespace", cr.Namespace)
 
+	rec := plumbingevent.NewAPIRecorder(c.recorder)
+	if rec == nil {
+		return nil, fmt.Errorf("failed to create event recorder")
+	}
+
 	return &external{
 		kube: c.kube,
 		log:  log,
 		cfg:  cfg,
-		rec:  c.recorder,
+		rec:  *rec,
 	}, nil
 }
 
@@ -102,15 +112,13 @@ type external struct {
 	kube client.Client
 	log  logging.Logger
 	cfg  *externalClientOpts
-	rec  record.EventRecorder
+	rec  plumbingevent.APIRecorder
 }
-
-var homeDir string
 
 func (e *external) Observe(ctx context.Context, mg resource.Managed) (reconciler.ExternalObservation, error) {
 	cr, ok := mg.(*repov1alpha1.Repo)
 	if !ok {
-		return reconciler.ExternalObservation{}, errors.New(errNotRepo)
+		return reconciler.ExternalObservation{}, errNotRepo
 	}
 	e.log.Info("Observing resource")
 
@@ -205,7 +213,7 @@ func (e *external) Observe(ctx context.Context, mg resource.Managed) (reconciler
 func (e *external) Create(ctx context.Context, mg resource.Managed) error {
 	cr, ok := mg.(*repov1alpha1.Repo)
 	if !ok {
-		return errors.New(errNotRepo)
+		return errNotRepo
 	}
 	if !meta.IsActionAllowed(cr, meta.ActionCreate) {
 		e.log.Debug("External resource should not be created by provider, skip creating.")
@@ -219,7 +227,7 @@ func (e *external) Create(ctx context.Context, mg resource.Managed) error {
 func (e *external) Update(ctx context.Context, mg resource.Managed) error {
 	cr, ok := mg.(*repov1alpha1.Repo)
 	if !ok {
-		return errors.New(errNotRepo)
+		return errNotRepo
 	}
 
 	if !cr.Spec.EnableUpdate {
@@ -239,7 +247,7 @@ func (e *external) Update(ctx context.Context, mg resource.Managed) error {
 func (e *external) Delete(ctx context.Context, mg resource.Managed) error {
 	cr, ok := mg.(*repov1alpha1.Repo)
 	if !ok {
-		return errors.New(errNotRepo)
+		return errNotRepo
 	}
 	if !meta.IsActionAllowed(cr, meta.ActionDelete) {
 		e.log.Debug("External resource should not be deleted by provider, skip deleting.")
@@ -278,13 +286,18 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 
 	spec := cr.Spec.DeepCopy()
 
+	var altBranch *string
+	if len(spec.ToRepo.CloneFromBranch) > 0 {
+		altBranch = ptr.To(spec.ToRepo.CloneFromBranch)
+	}
+
 	toRepo, err := git.Clone(git.CloneOptions{
 		URL:                     spec.ToRepo.Url,
 		Auth:                    e.cfg.ToRepoCreds,
 		Insecure:                e.cfg.Insecure,
 		UnsupportedCapabilities: e.cfg.UnsupportedCapabilities,
 		Branch:                  spec.ToRepo.Branch,
-		AlternativeBranch:       ptr.To(cr.Spec.ToRepo.CloneFromBranch),
+		AlternativeBranch:       altBranch,
 		GitCookies:              e.cfg.ToRepoCookieFile,
 		HomeDir:                 homeDir, // Use the configured home directory for temporary files
 	})
@@ -294,8 +307,7 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 	defer toRepo.Cleanup()
 
 	e.log.Debug("Target repo cloned", "url", spec.ToRepo.Url)
-	e.rec.Eventf(cr, corev1.EventTypeNormal, "TargetRepoCloned",
-		"Successfully cloned target repo: %s", spec.ToRepo.Url)
+	e.rec.Event(cr, plumbingevent.Normal("TargetRepoCloned", "Reconciling", fmt.Sprintf("Successfully cloned target repo: %s", spec.ToRepo.Url)))
 	e.log.Debug(fmt.Sprintf("Target repo on branch %s", toRepo.CurrentBranch()))
 
 	fromRepo, err := git.Clone(git.CloneOptions{
@@ -312,8 +324,7 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 	}
 	defer fromRepo.Cleanup()
 	e.log.Debug("Origin repo cloned", "url", spec.FromRepo.Url)
-	e.rec.Eventf(cr, corev1.EventTypeNormal, "OriginRepoCloned",
-		"Successfully cloned origin repo: %s", spec.FromRepo.Url)
+	e.rec.Event(cr, plumbingevent.Normal("OriginRepoCloned", "Reconciling", fmt.Sprintf("Successfully cloned origin repo: %s", spec.FromRepo.Url)))
 	e.log.Debug(fmt.Sprintf("Origin repo on branch %s", fromRepo.CurrentBranch()))
 
 	fromRepoCommitId, err := fromRepo.GetLatestCommit(fromRepo.CurrentBranch())
@@ -335,8 +346,7 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 		values, err = e.loadValuesFromConfigMap(ctx, spec.ConfigMapKeyRef)
 		if err != nil {
 			e.log.Debug("Unable to load configmap with template data", "msg", err.Error())
-			e.rec.Eventf(cr, corev1.EventTypeWarning, "CannotLoadConfigMap",
-				"Unable to load configmap with template data: %s", err.Error())
+			e.rec.Event(cr, plumbingevent.Warning("CannotLoadConfigMap", "Reconciling", fmt.Errorf("Unable to load configmap with template data: %s", err.Error())))
 		}
 
 		e.log.Debug("Loaded values from config map",
@@ -346,20 +356,36 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 			"values", values,
 		)
 	}
-	co, err := copier.NewCopier(fromRepo.FS(), toRepo.FS(),
+	opts := []copier.Option{
 		copier.WithOriginCopyPath(fromPath),
 		copier.WithTargetCopyPath(toPath),
 		copier.WithIgnorePath(spec.FromRepo.KrateoIgnorePath),
-		copier.WithMustacheTemplate(values),
-	)
+	}
+
+	if values != nil {
+		engine := cr.GetAnnotations()[AnnotationTemplatingEngine]
+		if engine == "gotemplate" {
+			tplVals := make([]template.TemplateValue, 0, len(values))
+			for k, v := range values {
+				tplVals = append(tplVals, template.TemplateValue{
+					Key:   k,
+					Value: fmt.Sprintf("%v", v),
+				})
+			}
+			opts = append(opts, copier.WithGoTemplate(tplVals))
+		} else {
+			opts = append(opts, copier.WithMustacheTemplate(values))
+		}
+	}
+
+	co, err := copier.NewCopier(fromRepo.FS(), toRepo.FS(), opts...)
 	if err != nil {
 		return fmt.Errorf("unable to create copier: %w", err)
 	}
 	if override {
 		e.log.Debug("Override is true, overriding all files in target repo")
 		if fromPath == "/" && toPath == "/" {
-			e.rec.Eventf(cr, corev1.EventTypeWarning, "OverrideWarning",
-				"Override is set to true, but originPath and targetPath are both set to '/', this will override also service folders like .git, .github, .gitignore, etc. Consider using a different path for originPath or targetPath. This can broke the target repository causing the impossibility to push changes.")
+			e.rec.Event(cr, plumbingevent.Warning("OverrideWarning", "Reconciling", fmt.Errorf("Override is set to true, but originPath and targetPath are both set to '/', this will override also service folders like .git, .github, .gitignore, etc. Consider using a different path for originPath or targetPath. This can broke the target repository causing the impossibility to push changes.")))
 			e.log.Info("Override is set to true, but originPath and targetPath are both set to '/', this will override also service folders like .git, .github, .gitignore, etc. Consider using a different path for originPath or targetPath. This can broke the target repository causing the impossibility to push changes.")
 		}
 	}
@@ -372,8 +398,7 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 		"toUrl", spec.ToRepo.Url,
 		"fromPath", fromPath,
 		"toPath", toPath)
-	e.rec.Eventf(cr, corev1.EventTypeNormal, "RepoSyncSuccess",
-		"Origin and target repo synchronized")
+	e.rec.Event(cr, plumbingevent.Normal("RepoSyncSuccess", "Reconciling", "Origin and target repo synchronized"))
 
 	toRepoCommitIdObj, err := toRepo.Commit(".", commitMessage, &git.IndexOptions{
 		OriginRepo: fromRepo,
@@ -387,8 +412,7 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 			return fmt.Errorf("unable to get latest commit from target repo: %w", err)
 		}
 		e.log.Info("Target repo not commited", "branch", toRepo.CurrentBranch(), "status", "repository already up-to-date")
-		e.rec.Eventf(cr, corev1.EventTypeNormal, "RepoAlreadyUpToDate",
-			fmt.Sprintf("Target repo already up-to-date on branch %s", toRepo.CurrentBranch()))
+		e.rec.Event(cr, plumbingevent.Normal("RepoAlreadyUpToDate", "Reconciling", fmt.Sprintf("Target repo already up-to-date on branch %s", toRepo.CurrentBranch())))
 
 		meta.SetExternalName(cr, toRepoCommitId)
 		cr.Status.OriginCommitId = fromRepoCommitId
@@ -405,16 +429,14 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 		return fmt.Errorf("unable to commit target repo: %w", err)
 	}
 	e.log.Info("Target repo committed", "branch", toRepo.CurrentBranch(), "commitId", toRepoCommitId)
-	e.rec.Eventf(cr, corev1.EventTypeNormal, "RepoCommitSuccess",
-		fmt.Sprintf("Target repo committed on branch %s", toRepo.CurrentBranch()))
+	e.rec.Event(cr, plumbingevent.Normal("RepoCommitSuccess", "Reconciling", fmt.Sprintf("Target repo committed on branch %s", toRepo.CurrentBranch())))
 
 	err = toRepo.Push("origin", toRepo.CurrentBranch(), e.cfg.Insecure)
 	if err != nil {
 		return fmt.Errorf("unable to push target repo: %w", err)
 	}
 	e.log.Info("Target repo pushed", "branch", toRepo.CurrentBranch(), "commitId", toRepoCommitId)
-	e.rec.Eventf(cr, corev1.EventTypeNormal, "RepoPushSuccess",
-		fmt.Sprintf("Target repo pushed branch %s", toRepo.CurrentBranch()))
+	e.rec.Event(cr, plumbingevent.Normal("RepoPushSuccess", "Reconciling", fmt.Sprintf("Target repo pushed branch %s", toRepo.CurrentBranch())))
 
 	meta.SetExternalName(cr, toRepoCommitId)
 	cr.Status.OriginCommitId = fromRepoCommitId

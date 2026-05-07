@@ -3,9 +3,7 @@ package git
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
-	"io/fs"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -33,6 +31,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/krateoplatformops/git-provider/internal/utils"
 	"github.com/krateoplatformops/plumbing/ptr"
 )
 
@@ -42,10 +41,10 @@ var (
 )
 
 var (
-	ErrRepositoryNotFound     = errors.New("repository not found")
-	ErrEmptyRemoteRepository  = errors.New("remote repository is empty")
-	ErrAuthenticationRequired = errors.New("authentication required")
-	ErrAuthorizationFailed    = errors.New("authorization failed")
+	ErrRepositoryNotFound     = fmt.Errorf("repository not found: %w", transport.ErrRepositoryNotFound)
+	ErrEmptyRemoteRepository  = fmt.Errorf("remote repository is empty: %w", transport.ErrEmptyRemoteRepository)
+	ErrAuthenticationRequired = fmt.Errorf("authentication required: %w", transport.ErrAuthenticationRequired)
+	ErrAuthorizationFailed    = fmt.Errorf("authorization failed: %w", transport.ErrAuthorizationFailed)
 	NoErrAlreadyUpToDate      = git.NoErrAlreadyUpToDate
 )
 
@@ -500,7 +499,7 @@ func Clone(opts CloneOptions) (*Repo, error) {
 			Auth:            opts.Auth,
 			InsecureSkipTLS: opts.Insecure,
 		}
-		if opts.AlternativeBranch != nil {
+		if opts.AlternativeBranch != nil && len(ptr.Deref(opts.AlternativeBranch, "")) > 0 {
 			isOrphan = false
 			cloneOpts.ReferenceName = plumbing.NewBranchReferenceName(ptr.Deref(opts.AlternativeBranch, ""))
 			cloneOpts.SingleBranch = true
@@ -514,19 +513,19 @@ func Clone(opts CloneOptions) (*Repo, error) {
 	}
 	res.repo, err = git.Clone(res.storer, res.fs, &cloneOpts)
 	if err != nil {
-		if errors.Is(err, transport.ErrRepositoryNotFound) {
+		if utils.IsErr(ErrRepositoryNotFound, err) {
 			return nil, ErrRepositoryNotFound
 		}
 
-		if errors.Is(err, transport.ErrEmptyRemoteRepository) {
+		if utils.IsErr(ErrEmptyRemoteRepository, err) {
 			return nil, ErrEmptyRemoteRepository
 		}
 
-		if errors.Is(err, transport.ErrAuthenticationRequired) {
+		if utils.IsErr(ErrAuthenticationRequired, err) {
 			return nil, ErrAuthenticationRequired
 		}
 
-		if errors.Is(err, transport.ErrAuthorizationFailed) {
+		if utils.IsErr(ErrAuthorizationFailed, err) {
 			return nil, ErrAuthorizationFailed
 		}
 		return nil, err
@@ -548,8 +547,8 @@ func (s *Repo) Exists(path string) (bool, error) {
 	defer s.setDefaultHTTPSClient()
 	_, err := s.fs.Stat(path)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return false, nil
+		if utils.IsErr(ErrRepositoryNotFound, err) {
+			return false, ErrRepositoryNotFound
 		}
 
 		return false, err
@@ -761,7 +760,7 @@ func Pull(s *Repo, insecure bool) error {
 	})
 
 	if err != nil {
-		if errors.Is(err, git.NoErrAlreadyUpToDate) {
+		if utils.IsErr(git.NoErrAlreadyUpToDate, err) {
 			err = nil
 		}
 	}

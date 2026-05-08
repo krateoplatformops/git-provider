@@ -16,7 +16,6 @@ import (
 
 	contexttools "github.com/krateoplatformops/provider-runtime/pkg/context"
 	"github.com/krateoplatformops/provider-runtime/pkg/logging"
-	"github.com/rs/zerolog/log"
 
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	gitclient "github.com/go-git/go-git/v5/plumbing/transport/client"
@@ -202,7 +201,9 @@ func restoreUnsupportedCapabilities(oldUnsupportedCaps []capability.Capability) 
 	transport.UnsupportedCapabilities = oldUnsupportedCaps
 }
 
-func IsInGitCommitHistory(opts ListOptions, hash string) (bool, error) {
+func IsInGitCommitHistory(ctx context.Context, opts ListOptions, hash string) (bool, error) {
+	log := contexttools.LoggerFromCtx(ctx, logging.NewNopLogger())
+
 	tmpDir, err := os.MkdirTemp(opts.HomeDir, "git-provider-history-*")
 	if err != nil {
 		return false, fmt.Errorf("failed to create temporary directory: %w", err)

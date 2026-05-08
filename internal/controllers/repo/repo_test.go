@@ -969,7 +969,10 @@ func TestController(t *testing.T) {
 
 	f := features.New("RepoControllerFeatures").
 		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
-			ctx, err := setupController(ctx, cfg)
+			mgrCtx, mgrCancel := context.WithCancel(context.Background())
+			ctx = context.WithValue(ctx, "mgrCancel", mgrCancel)
+
+			_, err := setupController(mgrCtx, cfg)
 			require.NoError(t, err)
 
 			r, err := resources.New(cfg.Client().RESTConfig())
@@ -991,6 +994,13 @@ func TestController(t *testing.T) {
 				},
 			}))
 
+			return ctx
+		}).
+		Teardown(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+			if cancel, ok := ctx.Value("mgrCancel").(context.CancelFunc); ok {
+				cancel()
+				time.Sleep(1 * time.Second) // Give manager time to stop
+			}
 			return ctx
 		})
 

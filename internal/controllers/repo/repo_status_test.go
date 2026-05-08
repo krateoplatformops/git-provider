@@ -48,3 +48,48 @@ func TestFailSyncMarksResourceUnavailableAndSyncedFalse(t *testing.T) {
 	require.Equal(t, commonv1.ReasonReconcileError, synced.Reason)
 	require.Equal(t, "push failed", synced.Message)
 }
+
+// errorStatusWriter simula un fallimento durante la scrittura dello status
+type errorStatusWriter struct {
+	ctrlclient.StatusWriter
+}
+
+func (w *errorStatusWriter) Update(ctx context.Context, obj ctrlclient.Object, opts ...ctrlclient.SubResourceUpdateOption) error {
+	return errors.New("simulated update conflict error")
+}
+
+// errorClient fa da wrapper a un client mockato e restituisce lo StatusWriter fallato
+type errorClient struct {
+	ctrlclient.Client
+}
+
+func (c *errorClient) Status() ctrlclient.StatusWriter {
+	return &errorStatusWriter{c.Client.Status()}
+}
+
+func TestFailSyncWithUpdateConflictCausesNestedError(t *testing.T) {
+	require.NoError(t, apis.AddToScheme(clientsetscheme.Scheme))
+
+	cr := &repov1alpha1.Repo{
+		ObjectMeta: metav1.ObjectMeta{Name: "sample-conflict", Namespace: "test-system"},
+	}
+
+	kubeClient := fake.NewClientBuilder().
+		WithScheme(clientsetscheme.Scheme).
+		WithStatusSubresource(cr).
+		WithObjects(cr).
+		Build()
+
+	// Inseriamo il client malevolo
+	e := &external{kube: &errorClient{Client: kubeClient}}
+
+	inputErr := errors.New("primary reconcile failure")
+
+	// Eseguiamo failSync.
+	returnedErr := e.failSync(context.Background(), cr, inputErr)
+
+	// Verifichiamo che il fallimento originale venga restituito intatto,
+	// senza errori di update annidati.
+	require.Equal(t, inputErr, returnedErr)
+	require.NotContains(t, returnedErr.Error(), "simulated update conflict error")
+}

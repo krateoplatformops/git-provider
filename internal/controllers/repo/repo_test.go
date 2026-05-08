@@ -919,6 +919,52 @@ func TestController(t *testing.T) {
 				require.Contains(t, updated.GetCondition(commonv1.TypeSynced).Message, "target commit")
 			},
 		},
+		{
+			name: "TC13-AutoHealAfterEnableUpdateFalse",
+			setup: func(ctx context.Context, t *testing.T, r *resources.Resources) {
+				createGiteaRepo(t, "src-tc13", "main")
+				createGiteaRepo(t, "dst-tc13", "main")
+				commitFilesToRepo(t, "src-tc13", "main", "seed source", map[string]string{
+					"content/app.txt": "v1\n",
+				})
+			},
+			repo: func() *repov1alpha1.Repo {
+				repo := newRepoResource("tc13-autoheal", "src-tc13", "main", "dst-tc13", "main")
+				repo.Spec.Override = true
+				repo.Spec.EnableUpdate = false // Parte disabilitato
+				return repo
+			}(),
+			verify: func(ctx context.Context, t *testing.T, r *resources.Resources, repoName string) {
+				// Il primo sync (fase di Create) avviene a prescindere da EnableUpdate
+				_, err := waitForRepoCondition(ctx, r, repoName, commonv1.TypeReady, metav1.ConditionTrue, 90*time.Second)
+				require.NoError(t, err)
+
+				// Simuliamo un aggiornamento nel repo sorgente
+				updatedOrigin := commitFilesToRepo(t, "src-tc13", "main", "update source", map[string]string{
+					"content/app.txt": "v2\n",
+				})
+
+				// Essendo EnableUpdate = false, il Reconcile va in errore
+				failed, err := waitForRepoCondition(ctx, r, repoName, commonv1.TypeSynced, metav1.ConditionFalse, 45*time.Second)
+				require.NoError(t, err)
+				require.Equal(t, commonv1.ReasonReconcileError, failed.GetCondition(commonv1.TypeSynced).Reason)
+
+				// AUTO-HEAL: L'utente riabilita l'update
+				err = r.Get(ctx, repoName, namespace, failed)
+				require.NoError(t, err)
+				failed.Spec.EnableUpdate = true
+				err = r.Update(ctx, failed)
+				require.NoError(t, err)
+
+				// Verifichiamo che il controller guarisca automaticamente e completi l'allineamento
+				_, err = waitForRepo(ctx, r, repoName, 90*time.Second, func(repo *repov1alpha1.Repo) bool {
+					return repo.GetCondition(commonv1.TypeReady).Status == metav1.ConditionTrue &&
+						repo.Status.OriginCommitId == updatedOrigin
+				})
+				require.NoError(t, err)
+				require.Equal(t, "v2\n", readRemoteFile(t, "dst-tc13", "main", "content/app.txt"))
+			},
+		},
 	}
 
 	f := features.New("RepoControllerFeatures").

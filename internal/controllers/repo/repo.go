@@ -284,10 +284,6 @@ func (e *external) failSync(ctx context.Context, cr *repov1alpha1.Repo, err erro
 	}
 
 	cr.Status.SetConditions(commonv1.Unavailable(), commonv1.ReconcileError(err))
-	if updateErr := e.kube.Status().Update(ctx, cr); updateErr != nil {
-		return fmt.Errorf("%w; unable to update status after failure: %v", err, updateErr)
-	}
-
 	return err
 }
 
@@ -414,7 +410,6 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 		FromPath:   fromPath,
 		ToPath:     toPath,
 	})
-	toRepoCommitId := toRepoCommitIdObj.String()
 	if err == git.NoErrAlreadyUpToDate {
 		toRepoCommitId, err := toRepo.GetLatestCommit(toRepo.CurrentBranch())
 		if err != nil {
@@ -437,6 +432,8 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 	} else if err != nil {
 		return e.failSync(ctx, cr, fmt.Errorf("unable to commit target repo: %w", err))
 	}
+	toRepoCommitId := toRepoCommitIdObj.String()
+
 	e.log.Info("Target repo committed", "branch", toRepo.CurrentBranch(), "commitId", toRepoCommitId)
 	e.rec.Event(cr, plumbingevent.Normal("RepoCommitSuccess", "Reconciling", fmt.Sprintf("Target repo committed on branch %s", toRepo.CurrentBranch())))
 

@@ -283,7 +283,11 @@ func (co *Copier) copyFile(src, dst string, doNotRender bool) (err error) {
 
 	defer func() {
 		if e := out.Close(); e != nil {
-			err = e
+			if err != nil {
+				err = fmt.Errorf("%v; additionally failed to close file: %w", err, e)
+			} else {
+				err = fmt.Errorf("failed to close file: %w", e)
+			}
 		}
 	}()
 

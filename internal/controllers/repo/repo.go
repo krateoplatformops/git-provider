@@ -262,7 +262,7 @@ func (e *external) loadValuesFromConfigMap(ctx context.Context, ref *commonv1.Co
 
 	js, err := resource.GetConfigMapValue(ctx, e.kube, ref)
 	if err != nil {
-		e.log.Debug(err.Error(), "name", ref.Name, "key", ref.Key, "namespace", ref.Namespace)
+		e.log.Warn(err.Error(), "name", ref.Name, "key", ref.Key, "namespace", ref.Namespace)
 		return nil, err
 	}
 
@@ -271,7 +271,7 @@ func (e *external) loadValuesFromConfigMap(ctx context.Context, ref *commonv1.Co
 
 	err = json.Unmarshal([]byte(js), &res)
 	if err != nil {
-		e.log.Debug(err.Error(), "json", js)
+		e.log.Warn(err.Error(), "json", js)
 		return nil, err
 	}
 
@@ -350,7 +350,7 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 	if spec.ConfigMapKeyRef != nil {
 		values, err = e.loadValuesFromConfigMap(ctx, spec.ConfigMapKeyRef)
 		if err != nil {
-			e.log.Debug("Unable to load configmap with template data", "msg", err.Error())
+			e.log.Warn("Unable to load configmap with template data", "msg", err.Error())
 			e.rec.Event(cr, plumbingevent.Warning("CannotLoadConfigMap", "Reconciling", fmt.Errorf("Unable to load configmap with template data: %s", err.Error())))
 		}
 

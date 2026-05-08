@@ -16,6 +16,7 @@ import (
 
 	contexttools "github.com/krateoplatformops/provider-runtime/pkg/context"
 	"github.com/krateoplatformops/provider-runtime/pkg/logging"
+	"github.com/rs/zerolog/log"
 
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	gitclient "github.com/go-git/go-git/v5/plumbing/transport/client"
@@ -257,7 +258,7 @@ func IsInGitCommitHistory(opts ListOptions, hash string) (bool, error) {
 	res.repo, err = git.Clone(res.storer, res.fs, &cloneOpts)
 	if err != nil {
 		if strings.Contains(err.Error(), "couldn't find remote ref") {
-			fmt.Println("Branch not found in remote repository")
+			log.Warn("Branch not found in remote repository", "branch", opts.Branch, "url", opts.URL)
 			return false, nil
 		}
 		return false, fmt.Errorf("failed to clone repository: %v", err)

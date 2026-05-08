@@ -3,6 +3,7 @@ package git
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/cookiejar"
@@ -45,6 +46,7 @@ var (
 	ErrEmptyRemoteRepository  = fmt.Errorf("remote repository is empty: %w", transport.ErrEmptyRemoteRepository)
 	ErrAuthenticationRequired = fmt.Errorf("authentication required: %w", transport.ErrAuthenticationRequired)
 	ErrAuthorizationFailed    = fmt.Errorf("authorization failed: %w", transport.ErrAuthorizationFailed)
+	ErrBranchNotFound         = errors.New("branch not found")
 	NoErrAlreadyUpToDate      = git.NoErrAlreadyUpToDate
 )
 
@@ -194,14 +196,14 @@ func GetLatestCommitRemote(opts ListOptions) (*string, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("Branch %s reference %s not found on remote %s", opts.Branch, repoRef, opts.URL)
+	return nil, fmt.Errorf("%w: branch %s reference %s not found on remote %s", ErrBranchNotFound, opts.Branch, repoRef, opts.URL)
 }
 
 func restoreUnsupportedCapabilities(oldUnsupportedCaps []capability.Capability) {
 	transport.UnsupportedCapabilities = oldUnsupportedCaps
 }
 
-func IsInGitCommitHistory(ctx context.Context, opts ListOptions, hash string) (bool, error) {
+func isInGitCommitHistory(ctx context.Context, opts ListOptions, hash string) (bool, error) {
 	log := contexttools.LoggerFromCtx(ctx, logging.NewNopLogger())
 
 	tmpDir, err := os.MkdirTemp(opts.HomeDir, "git-provider-history-*")
@@ -262,7 +264,7 @@ func IsInGitCommitHistory(ctx context.Context, opts ListOptions, hash string) (b
 			log.Warn("Branch not found in remote repository", "branch", opts.Branch, "url", opts.URL)
 			return false, nil
 		}
-		return false, fmt.Errorf("failed to clone repository: %v", err)
+		return false, fmt.Errorf("failed to clone repository: %w", err)
 	}
 	head, err := res.repo.Head()
 	if err != nil {
@@ -351,7 +353,7 @@ func IsFuncInGitCommitHistory(ctx context.Context, opts ListOptions, f func(comm
 			log.Warn("Branch not found in remote repository", "branch", opts.Branch, "url", opts.URL)
 			return plumbing.Hash{}, nil
 		}
-		return plumbing.Hash{}, fmt.Errorf("failed to clone repository: %v", err)
+		return plumbing.Hash{}, fmt.Errorf("failed to clone repository: %w", err)
 	}
 	head, err := res.repo.Head()
 	if err != nil {
@@ -433,6 +435,10 @@ func (s *Repo) UpdateIndex(idx *IndexOptions) error {
 	return nil
 }
 func Clone(opts CloneOptions) (*Repo, error) {
+	return clone(context.Background(), opts)
+}
+
+func clone(ctx context.Context, opts CloneOptions) (*Repo, error) {
 	tmpDir, err := os.MkdirTemp(opts.HomeDir, "git-provider-clone-*")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temporary directory: %w", err)
@@ -495,6 +501,9 @@ func Clone(opts CloneOptions) (*Repo, error) {
 		GitCookies: opts.GitCookies,
 	})
 	if err != nil {
+		if !errors.Is(err, ErrBranchNotFound) {
+			return nil, fmt.Errorf("failed to inspect remote branch: %w", err)
+		}
 		cloneOpts = git.CloneOptions{
 			RemoteName:      "origin",
 			URL:             opts.URL,
@@ -515,22 +524,7 @@ func Clone(opts CloneOptions) (*Repo, error) {
 	}
 	res.repo, err = git.Clone(res.storer, res.fs, &cloneOpts)
 	if err != nil {
-		if utils.IsErr(ErrRepositoryNotFound, err) {
-			return nil, ErrRepositoryNotFound
-		}
-
-		if utils.IsErr(ErrEmptyRemoteRepository, err) {
-			return nil, ErrEmptyRemoteRepository
-		}
-
-		if utils.IsErr(ErrAuthenticationRequired, err) {
-			return nil, ErrAuthenticationRequired
-		}
-
-		if utils.IsErr(ErrAuthorizationFailed, err) {
-			return nil, ErrAuthorizationFailed
-		}
-		return nil, err
+		return nil, fmt.Errorf("failed to clone repository: %w", err)
 	}
 
 	err = res.Branch(opts.Branch, &CreateOpt{
@@ -540,6 +534,14 @@ func Clone(opts CloneOptions) (*Repo, error) {
 
 	res.setDefaultHTTPSClient()
 	return res, err
+}
+
+func IsInGitCommitHistory(opts ListOptions, hash string) (bool, error) {
+	return isInGitCommitHistory(context.Background(), opts, hash)
+}
+
+func IsInGitCommitHistoryContext(ctx context.Context, opts ListOptions, hash string) (bool, error) {
+	return isInGitCommitHistory(ctx, opts, hash)
 }
 
 func (s *Repo) Exists(path string) (bool, error) {

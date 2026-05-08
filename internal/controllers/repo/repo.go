@@ -163,7 +163,7 @@ func (e *external) Observe(ctx context.Context, mg resource.Managed) (reconciler
 		return reconciler.ExternalObservation{}, err
 	}
 
-	isTargetRepoSynced, err := git.IsInGitCommitHistory(ctx, git.ListOptions{
+	isTargetRepoSynced, err := git.IsInGitCommitHistoryContext(ctx, git.ListOptions{
 		URL:        cr.Spec.ToRepo.Url,
 		Auth:       e.cfg.ToRepoCreds,
 		Insecure:   e.cfg.Insecure,

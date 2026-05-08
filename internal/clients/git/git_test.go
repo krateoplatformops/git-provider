@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -63,6 +64,19 @@ func TestGetLatestCommitRemote(t *testing.T) {
 	require.NoError(t, err)
 	expected = "e8d3ffab552895c19b9fcf7aa264d277cde33881"
 	assert.Equal(t, expected, *commit)
+}
+
+func TestGetLatestCommitRemoteBranchNotFound(t *testing.T) {
+	baseRepo := BaseSuite{}
+	baseRepo.BuildBasicRepository()
+
+	_, err := GetLatestCommitRemote(ListOptions{
+		URL:    baseRepo.GetBasicLocalRepositoryURL(),
+		Branch: "missing-branch",
+	})
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrBranchNotFound))
+	assert.Contains(t, err.Error(), "missing-branch")
 }
 
 func TestPull(t *testing.T) {

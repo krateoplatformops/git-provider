@@ -12,7 +12,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/krateoplatformops/provider-runtime/pkg/event"
 	"github.com/krateoplatformops/provider-runtime/pkg/logging"
 	"github.com/krateoplatformops/provider-runtime/pkg/meta"
 	"github.com/krateoplatformops/provider-runtime/pkg/ratelimiter"
@@ -58,7 +57,7 @@ func Setup(mgr ctrl.Manager, o option.SetupOptions) error {
 		}),
 		reconciler.WithPollInterval(o.Controller.PollInterval),
 		reconciler.WithLogger(log),
-		reconciler.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))),
+		reconciler.WithRecorder(plumbingevent.NewAPIRecorder(recorder)),
 		reconciler.WithTimeout(o.Controller.Timeout),
 	)
 
@@ -140,15 +139,6 @@ func (e *external) Observe(ctx context.Context, mg resource.Managed) (reconciler
 		}
 	}
 
-	if !cr.Spec.EnableUpdate && cr.Status.TargetCommitId != "" && cr.Status.OriginCommitId != "" && cr.Status.TargetBranch != "" && cr.Status.OriginBranch != "" {
-		e.log.Debug("External resource should not be observed by provider, skip observing. EnableUpdate is false.", "name", cr.Name)
-		cr.Status.SetConditions(commonv1.Available())
-		return reconciler.ExternalObservation{
-			ResourceExists:   true,
-			ResourceUpToDate: true,
-		}, e.kube.Status().Update(ctx, cr)
-	}
-
 	if cr.Status.TargetCommitId != "" {
 		meta.SetExternalName(cr, cr.Status.TargetCommitId)
 	}
@@ -188,6 +178,9 @@ func (e *external) Observe(ctx context.Context, mg resource.Managed) (reconciler
 
 	if ptr.Deref(latestCommit, "") != cr.Status.OriginCommitId {
 		e.log.Debug("Origin commit not found in origin remote repository", "commitId", cr.Status.OriginCommitId, "branch", cr.Status.OriginBranch)
+		if !cr.Spec.EnableUpdate {
+			return reconciler.ExternalObservation{}, e.failSync(ctx, cr, fmt.Errorf("origin commit %s is no longer the latest commit on branch %s while enableUpdate is false", cr.Status.OriginCommitId, cr.Status.OriginBranch))
+		}
 		return reconciler.ExternalObservation{
 			ResourceExists:   true,
 			ResourceUpToDate: false,
@@ -196,6 +189,9 @@ func (e *external) Observe(ctx context.Context, mg resource.Managed) (reconciler
 
 	if !isTargetRepoSynced {
 		e.log.Debug("Target commit not found in target remote repository", "commitId", cr.Status.TargetCommitId, "branch", cr.Status.TargetBranch)
+		if !cr.Spec.EnableUpdate {
+			return reconciler.ExternalObservation{}, e.failSync(ctx, cr, fmt.Errorf("target commit %s not found on branch %s while enableUpdate is false", cr.Status.TargetCommitId, cr.Status.TargetBranch))
+		}
 		return reconciler.ExternalObservation{
 			ResourceExists:   true,
 			ResourceUpToDate: false,
@@ -282,6 +278,19 @@ func (e *external) loadValuesFromConfigMap(ctx context.Context, ref *commonv1.Co
 	return res, nil
 }
 
+func (e *external) failSync(ctx context.Context, cr *repov1alpha1.Repo, err error) error {
+	if err == nil {
+		return nil
+	}
+
+	cr.Status.SetConditions(commonv1.Unavailable(), commonv1.ReconcileError(err))
+	if updateErr := e.kube.Status().Update(ctx, cr); updateErr != nil {
+		return fmt.Errorf("%w; unable to update status after failure: %v", err, updateErr)
+	}
+
+	return err
+}
+
 func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitMessage string) error {
 
 	spec := cr.Spec.DeepCopy()
@@ -302,7 +311,7 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 		HomeDir:                 homeDir, // Use the configured home directory for temporary files
 	})
 	if err != nil {
-		return fmt.Errorf("cloning toRepo: %w", err)
+		return e.failSync(ctx, cr, fmt.Errorf("cloning toRepo: %w", err))
 	}
 	defer toRepo.Cleanup()
 
@@ -320,7 +329,7 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 		HomeDir:                 homeDir, // Use the configured home directory for temporary files
 	})
 	if err != nil {
-		return fmt.Errorf("cloning fromRepo: %w", err)
+		return e.failSync(ctx, cr, fmt.Errorf("cloning fromRepo: %w", err))
 	}
 	defer fromRepo.Cleanup()
 	e.log.Debug("Origin repo cloned", "url", spec.FromRepo.Url)
@@ -329,7 +338,7 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 
 	fromRepoCommitId, err := fromRepo.GetLatestCommit(fromRepo.CurrentBranch())
 	if err != nil {
-		return err
+		return e.failSync(ctx, cr, err)
 	}
 
 	fromPath := spec.FromRepo.Path
@@ -380,7 +389,7 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 
 	co, err := copier.NewCopier(fromRepo.FS(), toRepo.FS(), opts...)
 	if err != nil {
-		return fmt.Errorf("unable to create copier: %w", err)
+		return e.failSync(ctx, cr, fmt.Errorf("unable to create copier: %w", err))
 	}
 	if override {
 		e.log.Debug("Override is true, overriding all files in target repo")
@@ -390,7 +399,7 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 		}
 	}
 	if err := co.Copy(override); err != nil {
-		return fmt.Errorf("unable to copy files: %w", err)
+		return e.failSync(ctx, cr, fmt.Errorf("unable to copy files: %w", err))
 	}
 
 	e.log.Info("Origin and target repo synchronized",
@@ -409,7 +418,7 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 	if err == git.NoErrAlreadyUpToDate {
 		toRepoCommitId, err := toRepo.GetLatestCommit(toRepo.CurrentBranch())
 		if err != nil {
-			return fmt.Errorf("unable to get latest commit from target repo: %w", err)
+			return e.failSync(ctx, cr, fmt.Errorf("unable to get latest commit from target repo: %w", err))
 		}
 		e.log.Info("Target repo not commited", "branch", toRepo.CurrentBranch(), "status", "repository already up-to-date")
 		e.rec.Event(cr, plumbingevent.Normal("RepoAlreadyUpToDate", "Reconciling", fmt.Sprintf("Target repo already up-to-date on branch %s", toRepo.CurrentBranch())))
@@ -422,18 +431,18 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 
 		err = e.kube.Status().Update(ctx, cr)
 		if err != nil {
-			return fmt.Errorf("unable to update status: %w", err)
+			return e.failSync(ctx, cr, fmt.Errorf("unable to update status: %w", err))
 		}
 		return nil
 	} else if err != nil {
-		return fmt.Errorf("unable to commit target repo: %w", err)
+		return e.failSync(ctx, cr, fmt.Errorf("unable to commit target repo: %w", err))
 	}
 	e.log.Info("Target repo committed", "branch", toRepo.CurrentBranch(), "commitId", toRepoCommitId)
 	e.rec.Event(cr, plumbingevent.Normal("RepoCommitSuccess", "Reconciling", fmt.Sprintf("Target repo committed on branch %s", toRepo.CurrentBranch())))
 
 	err = toRepo.Push("origin", toRepo.CurrentBranch(), e.cfg.Insecure)
 	if err != nil {
-		return fmt.Errorf("unable to push target repo: %w", err)
+		return e.failSync(ctx, cr, fmt.Errorf("unable to push target repo: %w", err))
 	}
 	e.log.Info("Target repo pushed", "branch", toRepo.CurrentBranch(), "commitId", toRepoCommitId)
 	e.rec.Event(cr, plumbingevent.Normal("RepoPushSuccess", "Reconciling", fmt.Sprintf("Target repo pushed branch %s", toRepo.CurrentBranch())))
@@ -445,7 +454,7 @@ func (e *external) SyncRepos(ctx context.Context, cr *repov1alpha1.Repo, commitM
 	cr.Status.OriginBranch = fromRepo.CurrentBranch()
 	err = e.kube.Status().Update(ctx, cr)
 	if err != nil {
-		return fmt.Errorf("unable to update status: %w", err)
+		return e.failSync(ctx, cr, fmt.Errorf("unable to update status: %w", err))
 	}
 	return nil
 }

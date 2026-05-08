@@ -333,6 +333,20 @@ func createGiteaRepo(t *testing.T, name, defaultBranch string) {
 	require.True(t, resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusConflict, "unexpected status creating repo %s: %s", name, resp.Status)
 }
 
+func deleteGiteaRepo(t *testing.T, name string) {
+	t.Helper()
+
+	req, err := http.NewRequest(http.MethodDelete, giteaBaseURL+"/api/v1/repos/"+giteaUsername+"/"+name, nil)
+	require.NoError(t, err)
+	req.SetBasicAuth(giteaUsername, giteaPassword)
+
+	resp, err := newInsecureHTTPClient().Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	require.True(t, resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusNotFound, "unexpected status deleting repo %s: %s", name, resp.Status)
+}
+
 func cloneGiteaRepo(t *testing.T, repoName, branch string) *gitclient.Repo {
 	t.Helper()
 
@@ -781,6 +795,128 @@ func TestController(t *testing.T) {
 				_, err := waitForRepoCondition(ctx, r, repoName, commonv1.TypeReady, metav1.ConditionTrue, 90*time.Second)
 				require.NoError(t, err)
 				require.Equal(t, "Hello GoTemplate!\n", readRemoteFile(t, "dst-tc09", "main", "content/template.txt"))
+			},
+		},
+		{
+			name: "TC10-EnableUpdateOverrideFalse",
+			setup: func(ctx context.Context, t *testing.T, r *resources.Resources) {
+				createGiteaRepo(t, "src-tc10", "main")
+				createGiteaRepo(t, "dst-tc10", "main")
+				commitFilesToRepo(t, "src-tc10", "main", "seed source", map[string]string{
+					"content/existing.txt": "source version v1\n",
+					"content/shared.txt":   "shared v1\n",
+				})
+				commitFilesToRepo(t, "dst-tc10", "main", "seed target", map[string]string{
+					"content/existing.txt": "target protected\n",
+				})
+			},
+			repo: func() *repov1alpha1.Repo {
+				repo := newRepoResource("tc10-update-override-false", "src-tc10", "main", "dst-tc10", "main")
+				repo.Spec.EnableUpdate = true
+				repo.Spec.Override = false
+				return repo
+			}(),
+			verify: func(ctx context.Context, t *testing.T, r *resources.Resources, repoName string) {
+				current, err := waitForRepoCondition(ctx, r, repoName, commonv1.TypeReady, metav1.ConditionTrue, 90*time.Second)
+				require.NoError(t, err)
+
+				initialOrigin := current.Status.OriginCommitId
+				initialTarget := current.Status.TargetCommitId
+
+				updatedOrigin := commitFilesToRepo(t, "src-tc10", "main", "update source", map[string]string{
+					"content/existing.txt":  "source version v2\n",
+					"content/shared.txt":    "shared v2\n",
+					"content/new-after.txt": "arrived later\n",
+				})
+
+				updated, err := waitForRepo(ctx, r, repoName, 2*time.Minute, func(repo *repov1alpha1.Repo) bool {
+					return repo.GetCondition(commonv1.TypeReady).Status == metav1.ConditionTrue &&
+						repo.Status.OriginCommitId == updatedOrigin &&
+						repo.Status.TargetCommitId != "" &&
+						repo.Status.TargetCommitId != initialTarget &&
+						repo.Status.OriginCommitId != initialOrigin
+				})
+				require.NoError(t, err)
+				require.NotEqual(t, initialTarget, updated.Status.TargetCommitId)
+				require.Equal(t, "target protected\n", readRemoteFile(t, "dst-tc10", "main", "content/existing.txt"))
+				require.Equal(t, "shared v1\n", readRemoteFile(t, "dst-tc10", "main", "content/shared.txt"))
+				require.Equal(t, "arrived later\n", readRemoteFile(t, "dst-tc10", "main", "content/new-after.txt"))
+			},
+		},
+		{
+			name: "TC11-DisableUpdateOverrideTrue",
+			setup: func(ctx context.Context, t *testing.T, r *resources.Resources) {
+				createGiteaRepo(t, "src-tc11", "main")
+				createGiteaRepo(t, "dst-tc11", "main")
+				commitFilesToRepo(t, "src-tc11", "main", "seed source", map[string]string{
+					"content/app.txt": "v1\n",
+				})
+			},
+			repo: func() *repov1alpha1.Repo {
+				repo := newRepoResource("tc11-disable-update-override-true", "src-tc11", "main", "dst-tc11", "main")
+				repo.Spec.Override = true
+				return repo
+			}(),
+			verify: func(ctx context.Context, t *testing.T, r *resources.Resources, repoName string) {
+				current, err := waitForRepoCondition(ctx, r, repoName, commonv1.TypeReady, metav1.ConditionTrue, 90*time.Second)
+				require.NoError(t, err)
+
+				initialOrigin := current.Status.OriginCommitId
+				initialTarget := current.Status.TargetCommitId
+				initialRemoteTarget := latestRemoteCommit(t, "dst-tc11", "main")
+
+				updatedOrigin := commitFilesToRepo(t, "src-tc11", "main", "update source", map[string]string{
+					"content/app.txt":   "v2\n",
+					"content/extra.txt": "should not sync\n",
+				})
+				require.NotEqual(t, initialOrigin, updatedOrigin)
+
+				later, err := waitForRepo(ctx, r, repoName, 45*time.Second, func(repo *repov1alpha1.Repo) bool {
+					synced := repo.GetCondition(commonv1.TypeSynced)
+					return synced.Status == metav1.ConditionFalse &&
+						synced.Reason == commonv1.ReasonReconcileError
+				})
+				require.NoError(t, err)
+				require.Equal(t, initialOrigin, later.Status.OriginCommitId)
+				require.Equal(t, initialTarget, later.Status.TargetCommitId)
+				require.Equal(t, initialRemoteTarget, latestRemoteCommit(t, "dst-tc11", "main"))
+				require.Contains(t, later.GetCondition(commonv1.TypeSynced).Message, "enableUpdate is false")
+				require.Equal(t, "v1\n", readRemoteFile(t, "dst-tc11", "main", "content/app.txt"))
+				assertRemoteFileAbsent(t, "dst-tc11", "main", "content/extra.txt")
+			},
+		},
+		{
+			name: "TC12-DisableUpdateDetectsTargetDrift",
+			setup: func(ctx context.Context, t *testing.T, r *resources.Resources) {
+				createGiteaRepo(t, "src-tc12", "main")
+				createGiteaRepo(t, "dst-tc12", "main")
+				commitFilesToRepo(t, "src-tc12", "main", "seed source", map[string]string{
+					"content/app.txt": "baseline\n",
+				})
+			},
+			repo: func() *repov1alpha1.Repo {
+				repo := newRepoResource("tc12-detect-target-drift", "src-tc12", "main", "dst-tc12", "main")
+				repo.Spec.Override = true
+				return repo
+			}(),
+			verify: func(ctx context.Context, t *testing.T, r *resources.Resources, repoName string) {
+				current, err := waitForRepoCondition(ctx, r, repoName, commonv1.TypeReady, metav1.ConditionTrue, 90*time.Second)
+				require.NoError(t, err)
+				require.NotEmpty(t, current.Status.TargetCommitId)
+
+				deleteGiteaRepo(t, "dst-tc12")
+				createGiteaRepo(t, "dst-tc12", "main")
+
+				updated, err := waitForRepo(ctx, r, repoName, 45*time.Second, func(repo *repov1alpha1.Repo) bool {
+					ready := repo.GetCondition(commonv1.TypeReady)
+					synced := repo.GetCondition(commonv1.TypeSynced)
+					return ready.Status == metav1.ConditionFalse &&
+						synced.Status == metav1.ConditionFalse &&
+						synced.Reason == commonv1.ReasonReconcileError
+				})
+				require.NoError(t, err)
+				require.Equal(t, commonv1.ReasonUnavailable, updated.GetCondition(commonv1.TypeReady).Reason)
+				require.Contains(t, updated.GetCondition(commonv1.TypeSynced).Message, "target commit")
 			},
 		},
 	}

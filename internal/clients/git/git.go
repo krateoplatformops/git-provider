@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -33,6 +32,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/krateoplatformops/git-provider/internal/utils"
 	"github.com/krateoplatformops/plumbing/ptr"
 )
 
@@ -42,12 +42,39 @@ var (
 )
 
 var (
-	ErrRepositoryNotFound     = errors.New("repository not found")
-	ErrEmptyRemoteRepository  = errors.New("remote repository is empty")
-	ErrAuthenticationRequired = errors.New("authentication required")
-	ErrAuthorizationFailed    = errors.New("authorization failed")
+	ErrRepositoryNotFound     = fmt.Errorf("repository not found: %w", transport.ErrRepositoryNotFound)
+	ErrEmptyRemoteRepository  = fmt.Errorf("remote repository is empty: %w", transport.ErrEmptyRemoteRepository)
+	ErrAuthenticationRequired = fmt.Errorf("authentication required: %w", transport.ErrAuthenticationRequired)
+	ErrAuthorizationFailed    = fmt.Errorf("authorization failed: %w", transport.ErrAuthorizationFailed)
+	ErrBranchNotFound         = errors.New("branch not found")
 	NoErrAlreadyUpToDate      = git.NoErrAlreadyUpToDate
 )
+
+type normalizedError struct {
+	err error
+	msg string
+}
+
+func (e normalizedError) Error() string {
+	return e.msg
+}
+
+func (e normalizedError) Unwrap() error {
+	return e.err
+}
+
+func normalizeEmptyReasonError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	msg := err.Error()
+	if strings.HasSuffix(msg, ": ") {
+		return normalizedError{err: err, msg: strings.TrimSuffix(msg, ": ")}
+	}
+
+	return err
+}
 
 var clientMutex sync.Mutex
 
@@ -186,7 +213,7 @@ func GetLatestCommitRemote(opts ListOptions) (*string, error) {
 		InsecureSkipTLS: opts.Insecure,
 	})
 	if err != nil {
-		return nil, err
+		return nil, normalizeEmptyReasonError(err)
 	}
 	repoRef := plumbing.NewBranchReferenceName(opts.Branch)
 	for _, ref := range refs {
@@ -195,14 +222,16 @@ func GetLatestCommitRemote(opts ListOptions) (*string, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("Branch %s reference %s not found on remote %s", opts.Branch, repoRef, opts.URL)
+	return nil, fmt.Errorf("%w: branch %s reference %s not found on remote %s", ErrBranchNotFound, opts.Branch, repoRef, opts.URL)
 }
 
 func restoreUnsupportedCapabilities(oldUnsupportedCaps []capability.Capability) {
 	transport.UnsupportedCapabilities = oldUnsupportedCaps
 }
 
-func IsInGitCommitHistory(opts ListOptions, hash string) (bool, error) {
+func isInGitCommitHistory(ctx context.Context, opts ListOptions, hash string) (bool, error) {
+	log := contexttools.LoggerFromCtx(ctx, logging.NewNopLogger())
+
 	tmpDir, err := os.MkdirTemp(opts.HomeDir, "git-provider-history-*")
 	if err != nil {
 		return false, fmt.Errorf("failed to create temporary directory: %w", err)
@@ -258,10 +287,10 @@ func IsInGitCommitHistory(opts ListOptions, hash string) (bool, error) {
 	res.repo, err = git.Clone(res.storer, res.fs, &cloneOpts)
 	if err != nil {
 		if strings.Contains(err.Error(), "couldn't find remote ref") {
-			fmt.Println("Branch not found in remote repository")
+			log.Warn("Branch not found in remote repository", "branch", opts.Branch, "url", opts.URL)
 			return false, nil
 		}
-		return false, fmt.Errorf("failed to clone repository: %v", err)
+		return false, fmt.Errorf("failed to clone repository: %w", normalizeEmptyReasonError(err))
 	}
 	head, err := res.repo.Head()
 	if err != nil {
@@ -350,7 +379,7 @@ func IsFuncInGitCommitHistory(ctx context.Context, opts ListOptions, f func(comm
 			log.Warn("Branch not found in remote repository", "branch", opts.Branch, "url", opts.URL)
 			return plumbing.Hash{}, nil
 		}
-		return plumbing.Hash{}, fmt.Errorf("failed to clone repository: %v", err)
+		return plumbing.Hash{}, fmt.Errorf("failed to clone repository: %w", normalizeEmptyReasonError(err))
 	}
 	head, err := res.repo.Head()
 	if err != nil {
@@ -432,6 +461,10 @@ func (s *Repo) UpdateIndex(idx *IndexOptions) error {
 	return nil
 }
 func Clone(opts CloneOptions) (*Repo, error) {
+	return clone(context.Background(), opts)
+}
+
+func clone(ctx context.Context, opts CloneOptions) (*Repo, error) {
 	tmpDir, err := os.MkdirTemp(opts.HomeDir, "git-provider-clone-*")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temporary directory: %w", err)
@@ -494,13 +527,16 @@ func Clone(opts CloneOptions) (*Repo, error) {
 		GitCookies: opts.GitCookies,
 	})
 	if err != nil {
+		if !errors.Is(err, ErrBranchNotFound) {
+			return nil, fmt.Errorf("failed to inspect remote branch: %w", normalizeEmptyReasonError(err))
+		}
 		cloneOpts = git.CloneOptions{
 			RemoteName:      "origin",
 			URL:             opts.URL,
 			Auth:            opts.Auth,
 			InsecureSkipTLS: opts.Insecure,
 		}
-		if opts.AlternativeBranch != nil {
+		if opts.AlternativeBranch != nil && len(ptr.Deref(opts.AlternativeBranch, "")) > 0 {
 			isOrphan = false
 			cloneOpts.ReferenceName = plumbing.NewBranchReferenceName(ptr.Deref(opts.AlternativeBranch, ""))
 			cloneOpts.SingleBranch = true
@@ -514,22 +550,7 @@ func Clone(opts CloneOptions) (*Repo, error) {
 	}
 	res.repo, err = git.Clone(res.storer, res.fs, &cloneOpts)
 	if err != nil {
-		if errors.Is(err, transport.ErrRepositoryNotFound) {
-			return nil, ErrRepositoryNotFound
-		}
-
-		if errors.Is(err, transport.ErrEmptyRemoteRepository) {
-			return nil, ErrEmptyRemoteRepository
-		}
-
-		if errors.Is(err, transport.ErrAuthenticationRequired) {
-			return nil, ErrAuthenticationRequired
-		}
-
-		if errors.Is(err, transport.ErrAuthorizationFailed) {
-			return nil, ErrAuthorizationFailed
-		}
-		return nil, err
+		return nil, fmt.Errorf("failed to clone repository: %w", normalizeEmptyReasonError(err))
 	}
 
 	err = res.Branch(opts.Branch, &CreateOpt{
@@ -541,6 +562,14 @@ func Clone(opts CloneOptions) (*Repo, error) {
 	return res, err
 }
 
+func IsInGitCommitHistory(opts ListOptions, hash string) (bool, error) {
+	return isInGitCommitHistory(context.Background(), opts, hash)
+}
+
+func IsInGitCommitHistoryContext(ctx context.Context, opts ListOptions, hash string) (bool, error) {
+	return isInGitCommitHistory(ctx, opts, hash)
+}
+
 func (s *Repo) Exists(path string) (bool, error) {
 	if err := s.setCustomHTTPSClientWithCookieJar(); err != nil {
 		return false, err
@@ -548,8 +577,8 @@ func (s *Repo) Exists(path string) (bool, error) {
 	defer s.setDefaultHTTPSClient()
 	_, err := s.fs.Stat(path)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return false, nil
+		if utils.IsErr(ErrRepositoryNotFound, err) {
+			return false, ErrRepositoryNotFound
 		}
 
 		return false, err
@@ -761,7 +790,7 @@ func Pull(s *Repo, insecure bool) error {
 	})
 
 	if err != nil {
-		if errors.Is(err, git.NoErrAlreadyUpToDate) {
+		if utils.IsErr(git.NoErrAlreadyUpToDate, err) {
 			err = nil
 		}
 	}

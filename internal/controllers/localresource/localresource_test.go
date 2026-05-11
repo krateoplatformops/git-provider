@@ -33,6 +33,7 @@ import (
 	"github.com/krateoplatformops/provider-runtime/pkg/logging"
 	"github.com/krateoplatformops/provider-runtime/pkg/ratelimiter"
 	v1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -825,7 +826,22 @@ spec:
 			}
 		}
 
-		time.Sleep(30 * time.Second) // wait for the controller to process deletions
+		for _, test := range toDeleteAndPatch {
+			var res v1alpha1.LocalResource
+			err := decoder.DecodeFile(
+				os.DirFS(filepath.Join(testdataPath)), test.filename,
+				&res,
+				decoder.MutateNamespace(namespace),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			err = waitForLocalResourceDeletion(ctx, r, res.GetName(), res.GetNamespace(), 90*time.Second)
+			if err != nil {
+				t.Fatalf("Failed waiting for LocalResource %s deletion: %v", res.Name, err)
+			}
+		}
 
 		// Now we recreate them with different specs and we check if values are overritten or not according to the specs
 		for _, test := range toDeleteAndPatch {
@@ -1013,4 +1029,22 @@ func waitForGitea(ctx context.Context) error {
 	}
 
 	return fmt.Errorf("Gitea failed to become ready after %v attempts", maxAttempts)
+}
+
+func waitForLocalResourceDeletion(ctx context.Context, r *resources.Resources, name, namespace string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		current := &v1alpha1.LocalResource{}
+		err := r.Get(ctx, name, namespace, current)
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil
+			}
+			return err
+		}
+
+		time.Sleep(2 * time.Second)
+	}
+
+	return fmt.Errorf("timed out waiting for LocalResource %s/%s deletion", namespace, name)
 }

@@ -283,7 +283,11 @@ func (co *Copier) copyFile(src, dst string, doNotRender bool) (err error) {
 
 	defer func() {
 		if e := out.Close(); e != nil {
-			err = e
+			if err != nil {
+				err = fmt.Errorf("%v; additionally failed to close file: %w", err, e)
+			} else {
+				err = fmt.Errorf("failed to close file: %w", e)
+			}
 		}
 	}()
 
@@ -316,7 +320,7 @@ func (co *Copier) setKrateoIgnore() error {
 }
 
 func (co *Copier) setTargetIgnore() error {
-	if _, err := co.fromFS.Stat(co.targetCopyPath); err == nil {
+	if _, err := co.toFS.Stat(co.targetCopyPath); err == nil {
 		var flist []string
 		err = loadFilesFromPath(co.toFS, co.targetCopyPath, &flist)
 		if err != nil {

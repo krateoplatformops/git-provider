@@ -63,6 +63,27 @@ func TestRenderFileNamesAndContent(t *testing.T) {
 	}
 }
 
+func TestMustacheRenderFileNamesAndContent(t *testing.T) {
+	from := memfs.New()
+	to := memfs.New()
+
+	// source file with templated name and content
+	writeFile(t, from, "/src/file_{{name}}.txt", "hello {{name}}")
+
+	co, err := NewCopier(from, to, WithOriginCopyPath("/src"), WithTargetCopyPath("/dst"), WithIgnorePath("/"), WithMustacheTemplate(map[string]string{"name": "world"}))
+	if err != nil {
+		t.Fatalf("failed to create copier: %v", err)
+	}
+	if err := co.Copy(true); err != nil {
+		t.Fatalf("copy failed: %v", err)
+	}
+
+	got := readFile(t, to, "/dst/file_world.txt")
+	if got != "hello world" {
+		t.Fatalf("unexpected content: %q", got)
+	}
+}
+
 func TestMustacheRendering(t *testing.T) {
 	from := memfs.New()
 	to := memfs.New()
@@ -114,11 +135,6 @@ func TestTargetIgnoreSkipsExisting(t *testing.T) {
 	// source has two files
 	writeFile(t, from, "/src/skip.txt", "from-skip")
 	writeFile(t, from, "/src/keep.txt", "from-keep")
-
-	// create target dir in FROM FS so setTargetIgnore will proceed to load files from TO FS
-	if err := from.MkdirAll("/dst", 0o755); err != nil {
-		t.Fatalf("mkdirall from:/dst: %v", err)
-	}
 
 	// create an existing file in target (TO FS) that should be considered for ignoring
 	writeFile(t, to, "/dst/skip.txt", "to-skip-original")

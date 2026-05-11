@@ -13,12 +13,13 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/tools/record"
+	record "k8s.io/client-go/tools/events"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/krateoplatformops/provider-runtime/pkg/event"
+	plumbingevent "github.com/krateoplatformops/plumbing/kubeutil/event"
+	"github.com/krateoplatformops/plumbing/kubeutil/eventrecorder"
 	"github.com/krateoplatformops/provider-runtime/pkg/logging"
 	"github.com/krateoplatformops/provider-runtime/pkg/meta"
 	"github.com/krateoplatformops/provider-runtime/pkg/ratelimiter"
@@ -48,7 +49,10 @@ func Setup(mgr ctrl.Manager, o option.SetupOptions) error {
 
 	log := o.Controller.Logger.WithValues("controller", name)
 
-	recorder := mgr.GetEventRecorderFor(name)
+	recorder, err := eventrecorder.Create(context.Background(), mgr.GetConfig(), name, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create event recorder: %w", err)
+	}
 
 	r := reconciler.NewReconciler(mgr,
 		resource.ManagedKind(localResourcev1alpha1.LocalResourceGroupVersionKind),
@@ -61,7 +65,7 @@ func Setup(mgr ctrl.Manager, o option.SetupOptions) error {
 		}),
 		reconciler.WithPollInterval(o.Controller.PollInterval),
 		reconciler.WithLogger(log),
-		reconciler.WithRecorder(event.NewAPIRecorder(recorder)),
+		reconciler.WithRecorder(plumbingevent.NewAPIRecorder(recorder)),
 		reconciler.WithTimeout(o.Controller.Timeout),
 	)
 
@@ -314,7 +318,7 @@ func (e *external) SyncLocalResources(ctx context.Context, cr *localResourcev1al
 	log := contexttools.LoggerFromCtx(ctx, e.log)
 
 	log.Debug("Target LocalResource cloned", "url", spec.ToRepo.Url)
-	e.rec.Eventf(cr, corev1.EventTypeNormal, "TargetLocalResourceCloned",
+	e.rec.Eventf(cr, nil, corev1.EventTypeNormal, "TargetLocalResourceCloned", "",
 		"Successfully cloned target LocalResource: %s", spec.ToRepo.Url)
 	log.Debug(fmt.Sprintf("Target LocalResource on branch %s", toRepo.CurrentBranch()))
 
@@ -438,7 +442,7 @@ func (e *external) SyncLocalResources(ctx context.Context, cr *localResourcev1al
 		return fmt.Errorf("unable to push target LocalResource: %w", err)
 	}
 	log.Info("Target LocalResource pushed", "branch", toRepo.CurrentBranch(), "commitId", toLocalResourceCommitId)
-	e.rec.Eventf(cr, corev1.EventTypeNormal, "LocalResourcePushSuccess",
+	e.rec.Eventf(cr, nil, corev1.EventTypeNormal, "LocalResourcePushSuccess", "",
 		fmt.Sprintf("Target LocalResource pushed branch %s", toRepo.CurrentBranch()))
 
 	meta.SetExternalName(cr, toLocalResourceCommitId)

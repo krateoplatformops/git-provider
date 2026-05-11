@@ -106,6 +106,37 @@ The behavior of how `LocalResource` interacts with the target repository over ti
 | `true` | `false` | **Continuous Sync Add/Update:** Pushes the file and updates it whenever the source changes. Leaves other files in the directory intact. |
 | `true` | `true` | **Continuous Sync Replace:** Pushes the file and updates it whenever the source changes. **Deletes all other files** in the target `path` on every sync. |
 
+## Advanced Configuration
+
+The `LocalResource` CR provides several advanced flags to handle complex Git environments.
+
+### Authentication Methods
+The `authMethod` field dictates how the provider authenticates with the destination Git server (`toRepo`). Supported values are:
+*   **`basic` (Default):** Basic authentication. Requires both `secretRef` (for the token/password) and `usernameRef`.
+*   **`bearer`:** Token-based authentication. Requires only `secretRef`. `usernameRef` is ignored.
+*   **`cookiefile`:** Authentication via a Git cookie file. Requires `secretRef` (containing the file contents). `usernameRef` is ignored.
+
+### Branch Creation & Orphan Branches
+When pushing to the destination repository (`toRepo`), if the target `branch` does not exist, the provider will create it. The behavior is controlled by the `cloneFromBranch` field:
+*   **If `cloneFromBranch` is set:** The new branch will be derived from the specified parent branch (e.g., `main`).
+*   **If `cloneFromBranch` is omitted:** The provider creates an **orphan branch** (a completely empty branch with no commit history).
+
+### Azure DevOps Compatibility
+Azure DevOps requires specific Git transport capabilities (`multi_ack` and `multi_ack_detailed`) that the underlying `go-git` library does not natively implement. 
+If the `toRepo.url` contains `dev.azure.com`, you **must** set the following flag to `true` (otherwise the CR validation will fail):
+```yaml
+spec:
+  unsupportedCapabilities: true
+```
+This forces the library to bypass the capability check, allowing successful communication with Azure.
+
+### Bypassing SSL Verification
+If you are interacting with Git servers using self-signed or invalid SSL certificates (e.g., in a local or air-gapped environment), you can disable certificate validation:
+```yaml
+spec:
+  insecure: true
+```
+
 ## Examples
 
 ### Exporting a ConfigMap (fromYaml)

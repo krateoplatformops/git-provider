@@ -79,6 +79,16 @@ func TestGetLatestCommitRemoteBranchNotFound(t *testing.T) {
 	assert.Contains(t, err.Error(), "missing-branch")
 }
 
+func TestNormalizeEmptyReasonError(t *testing.T) {
+	sentinel := errors.New("authentication required")
+	err := fmt.Errorf("%w: ", sentinel)
+
+	normalized := normalizeEmptyReasonError(err)
+
+	require.Equal(t, "authentication required", normalized.Error())
+	assert.True(t, errors.Is(normalized, sentinel))
+}
+
 func TestPull(t *testing.T) {
 	baseRepo := BaseSuite{}
 	baseRepo.BuildBasicRepository()

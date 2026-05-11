@@ -176,17 +176,6 @@ func (e *external) Observe(ctx context.Context, mg resource.Managed) (reconciler
 		return reconciler.ExternalObservation{}, err
 	}
 
-	if ptr.Deref(latestCommit, "") != cr.Status.OriginCommitId {
-		e.log.Debug("Origin commit not found in origin remote repository", "commitId", cr.Status.OriginCommitId, "branch", cr.Status.OriginBranch)
-		if !cr.Spec.EnableUpdate {
-			return reconciler.ExternalObservation{}, e.failSync(ctx, cr, fmt.Errorf("origin commit %s is no longer the latest commit on branch %s while enableUpdate is false", cr.Status.OriginCommitId, cr.Status.OriginBranch))
-		}
-		return reconciler.ExternalObservation{
-			ResourceExists:   true,
-			ResourceUpToDate: false,
-		}, nil
-	}
-
 	if !isTargetRepoSynced {
 		e.log.Debug("Target commit not found in target remote repository", "commitId", cr.Status.TargetCommitId, "branch", cr.Status.TargetBranch)
 		if !cr.Spec.EnableUpdate {
@@ -196,6 +185,17 @@ func (e *external) Observe(ctx context.Context, mg resource.Managed) (reconciler
 			ResourceExists:   true,
 			ResourceUpToDate: false,
 		}, nil
+	}
+
+	if ptr.Deref(latestCommit, "") != cr.Status.OriginCommitId {
+		e.log.Debug("Origin commit is no longer the latest commit on origin repository", "commitId", cr.Status.OriginCommitId, "branch", cr.Status.OriginBranch)
+		if cr.Spec.EnableUpdate {
+			return reconciler.ExternalObservation{
+				ResourceExists:   true,
+				ResourceUpToDate: false,
+			}, nil
+		}
+		e.log.Debug("Origin commit changed but enableUpdate is false, keeping the target repository unchanged")
 	}
 
 	cr.Status.SetConditions(commonv1.Available())

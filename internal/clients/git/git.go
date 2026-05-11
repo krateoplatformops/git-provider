@@ -50,6 +50,32 @@ var (
 	NoErrAlreadyUpToDate      = git.NoErrAlreadyUpToDate
 )
 
+type normalizedError struct {
+	err error
+	msg string
+}
+
+func (e normalizedError) Error() string {
+	return e.msg
+}
+
+func (e normalizedError) Unwrap() error {
+	return e.err
+}
+
+func normalizeEmptyReasonError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	msg := err.Error()
+	if strings.HasSuffix(msg, ": ") {
+		return normalizedError{err: err, msg: strings.TrimSuffix(msg, ": ")}
+	}
+
+	return err
+}
+
 var clientMutex sync.Mutex
 
 type Repo struct {
@@ -187,7 +213,7 @@ func GetLatestCommitRemote(opts ListOptions) (*string, error) {
 		InsecureSkipTLS: opts.Insecure,
 	})
 	if err != nil {
-		return nil, err
+		return nil, normalizeEmptyReasonError(err)
 	}
 	repoRef := plumbing.NewBranchReferenceName(opts.Branch)
 	for _, ref := range refs {
@@ -264,7 +290,7 @@ func isInGitCommitHistory(ctx context.Context, opts ListOptions, hash string) (b
 			log.Warn("Branch not found in remote repository", "branch", opts.Branch, "url", opts.URL)
 			return false, nil
 		}
-		return false, fmt.Errorf("failed to clone repository: %w", err)
+		return false, fmt.Errorf("failed to clone repository: %w", normalizeEmptyReasonError(err))
 	}
 	head, err := res.repo.Head()
 	if err != nil {
@@ -353,7 +379,7 @@ func IsFuncInGitCommitHistory(ctx context.Context, opts ListOptions, f func(comm
 			log.Warn("Branch not found in remote repository", "branch", opts.Branch, "url", opts.URL)
 			return plumbing.Hash{}, nil
 		}
-		return plumbing.Hash{}, fmt.Errorf("failed to clone repository: %w", err)
+		return plumbing.Hash{}, fmt.Errorf("failed to clone repository: %w", normalizeEmptyReasonError(err))
 	}
 	head, err := res.repo.Head()
 	if err != nil {
@@ -502,7 +528,7 @@ func clone(ctx context.Context, opts CloneOptions) (*Repo, error) {
 	})
 	if err != nil {
 		if !errors.Is(err, ErrBranchNotFound) {
-			return nil, fmt.Errorf("failed to inspect remote branch: %w", err)
+			return nil, fmt.Errorf("failed to inspect remote branch: %w", normalizeEmptyReasonError(err))
 		}
 		cloneOpts = git.CloneOptions{
 			RemoteName:      "origin",
@@ -524,7 +550,7 @@ func clone(ctx context.Context, opts CloneOptions) (*Repo, error) {
 	}
 	res.repo, err = git.Clone(res.storer, res.fs, &cloneOpts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to clone repository: %w", err)
+		return nil, fmt.Errorf("failed to clone repository: %w", normalizeEmptyReasonError(err))
 	}
 
 	err = res.Branch(opts.Branch, &CreateOpt{

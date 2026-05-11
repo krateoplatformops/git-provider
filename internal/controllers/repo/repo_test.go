@@ -871,16 +871,23 @@ func TestController(t *testing.T) {
 				})
 				require.NotEqual(t, initialOrigin, updatedOrigin)
 
-				later, err := waitForRepo(ctx, r, repoName, 45*time.Second, func(repo *repov1alpha1.Repo) bool {
-					synced := repo.GetCondition(commonv1.TypeSynced)
-					return synced.Status == metav1.ConditionFalse &&
-						synced.Reason == commonv1.ReasonReconcileError
-				})
+				require.Never(t, func() bool {
+					current := &repov1alpha1.Repo{}
+					if err := r.Get(ctx, repoName, namespace, current); err != nil {
+						return false
+					}
+					synced := current.GetCondition(commonv1.TypeSynced)
+					return synced.Status == metav1.ConditionFalse && synced.Reason == commonv1.ReasonReconcileError
+				}, 15*time.Second, 2*time.Second)
+
+				later := &repov1alpha1.Repo{}
+				err = r.Get(ctx, repoName, namespace, later)
 				require.NoError(t, err)
 				require.Equal(t, initialOrigin, later.Status.OriginCommitId)
 				require.Equal(t, initialTarget, later.Status.TargetCommitId)
 				require.Equal(t, initialRemoteTarget, latestRemoteCommit(t, "dst-tc11", "main"))
-				require.Contains(t, later.GetCondition(commonv1.TypeSynced).Message, "enableUpdate is false")
+				require.Equal(t, metav1.ConditionTrue, later.GetCondition(commonv1.TypeReady).Status)
+				require.Equal(t, metav1.ConditionTrue, later.GetCondition(commonv1.TypeSynced).Status)
 				require.Equal(t, "v1\n", readRemoteFile(t, "dst-tc11", "main", "content/app.txt"))
 				assertRemoteFileAbsent(t, "dst-tc11", "main", "content/extra.txt")
 			},
@@ -938,22 +945,34 @@ func TestController(t *testing.T) {
 				// Il primo sync (fase di Create) avviene a prescindere da EnableUpdate
 				_, err := waitForRepoCondition(ctx, r, repoName, commonv1.TypeReady, metav1.ConditionTrue, 90*time.Second)
 				require.NoError(t, err)
+				initialTarget := latestRemoteCommit(t, "dst-tc13", "main")
 
 				// Simuliamo un aggiornamento nel repo sorgente
 				updatedOrigin := commitFilesToRepo(t, "src-tc13", "main", "update source", map[string]string{
 					"content/app.txt": "v2\n",
 				})
 
-				// Essendo EnableUpdate = false, il Reconcile va in errore
-				failed, err := waitForRepoCondition(ctx, r, repoName, commonv1.TypeSynced, metav1.ConditionFalse, 45*time.Second)
+				// Essendo EnableUpdate = false, il controller resta passivo ma non deve segnalare errori.
+				require.Never(t, func() bool {
+					current := &repov1alpha1.Repo{}
+					if err := r.Get(ctx, repoName, namespace, current); err != nil {
+						return false
+					}
+					synced := current.GetCondition(commonv1.TypeSynced)
+					return synced.Status == metav1.ConditionFalse && synced.Reason == commonv1.ReasonReconcileError
+				}, 15*time.Second, 2*time.Second)
+
+				current := &repov1alpha1.Repo{}
+				err = r.Get(ctx, repoName, namespace, current)
 				require.NoError(t, err)
-				require.Equal(t, commonv1.ReasonReconcileError, failed.GetCondition(commonv1.TypeSynced).Reason)
+				require.Equal(t, initialTarget, current.Status.TargetCommitId)
+				require.Equal(t, initialTarget, latestRemoteCommit(t, "dst-tc13", "main"))
+				require.Equal(t, metav1.ConditionTrue, current.GetCondition(commonv1.TypeReady).Status)
+				require.Equal(t, metav1.ConditionTrue, current.GetCondition(commonv1.TypeSynced).Status)
 
 				// AUTO-HEAL: L'utente riabilita l'update
-				err = r.Get(ctx, repoName, namespace, failed)
-				require.NoError(t, err)
-				failed.Spec.EnableUpdate = true
-				err = r.Update(ctx, failed)
+				current.Spec.EnableUpdate = true
+				err = r.Update(ctx, current)
 				require.NoError(t, err)
 
 				// Verifichiamo che il controller guarisca automaticamente e completi l'allineamento

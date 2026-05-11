@@ -8,7 +8,7 @@ The `git-provider` leverages Krateo [provider-runtime](https://docs.krateo.io/ke
 
 It exposes two distinct Custom Resources (CRs) to handle different use cases:
 
-*   **[Repo](docs/repo.md):** Designed for **Git-to-Git** workflows. It clones an existing Git repository, optionally applies [Mustache templates](https://mustache.github.io) to the files using values from a `ConfigMap`, and pushes the result to a destination repository.
+*   **[Repo](docs/repo.md):** Designed for **Git-to-Git** workflows. It clones an existing Git repository, optionally applies templates ([Mustache](https://mustache.github.io) or [Go templates](https://pkg.go.dev/text/template)) to the files using values from a `ConfigMap`, and pushes the result to a destination repository.
 *   **[LocalResource](docs/local-resource.md):** Designed for **K8s-to-Git** workflows. It takes a local source (such as an embedded Kubernetes manifest, a reference to an existing cluster resource, or a raw string), optionally applies placeholder replacements, and commits the result directly to a destination Git repository.
 
 ## Installation

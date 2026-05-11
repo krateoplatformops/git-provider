@@ -63,6 +63,27 @@ func TestRenderFileNamesAndContent(t *testing.T) {
 	}
 }
 
+func TestMustacheRenderFileNamesAndContent(t *testing.T) {
+	from := memfs.New()
+	to := memfs.New()
+
+	// source file with templated name and content
+	writeFile(t, from, "/src/file_{{name}}.txt", "hello {{name}}")
+
+	co, err := NewCopier(from, to, WithOriginCopyPath("/src"), WithTargetCopyPath("/dst"), WithIgnorePath("/"), WithMustacheTemplate(map[string]string{"name": "world"}))
+	if err != nil {
+		t.Fatalf("failed to create copier: %v", err)
+	}
+	if err := co.Copy(true); err != nil {
+		t.Fatalf("copy failed: %v", err)
+	}
+
+	got := readFile(t, to, "/dst/file_world.txt")
+	if got != "hello world" {
+		t.Fatalf("unexpected content: %q", got)
+	}
+}
+
 func TestMustacheRendering(t *testing.T) {
 	from := memfs.New()
 	to := memfs.New()

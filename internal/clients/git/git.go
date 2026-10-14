@@ -458,7 +458,7 @@ func (s *Repo) UpdateIndex(idx *IndexOptions) error {
 			e.Mode = fromEntry.Mode
 		}
 	}
-	return nil
+	return s.storer.SetIndex(toIdx)
 }
 func Clone(opts CloneOptions) (*Repo, error) {
 	return clone(context.Background(), opts)

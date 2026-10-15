@@ -42,6 +42,7 @@ var (
 	ErrEmptyRemoteRepository  = errors.New("remote repository is empty")
 	ErrAuthenticationRequired = errors.New("authentication required")
 	ErrAuthorizationFailed    = errors.New("authorization failed")
+	ErrBranchNotFound         = errors.New("branch not found")
 	NoErrAlreadyUpToDate      = git.NoErrAlreadyUpToDate
 )
 
@@ -191,7 +192,7 @@ func GetLatestCommitRemote(opts ListOptions) (*string, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("Branch %s reference %s not found on remote %s", opts.Branch, repoRef, opts.URL)
+	return nil, fmt.Errorf("%w: branch %s reference %s not found on remote %s", ErrBranchNotFound, opts.Branch, repoRef, opts.URL)
 }
 
 func restoreUnsupportedCapabilities(oldUnsupportedCaps []capability.Capability) {
@@ -390,6 +391,9 @@ func Clone(opts CloneOptions) (*Repo, error) {
 		GitCookies: opts.GitCookies,
 	})
 	if err != nil {
+		if !errors.Is(err, ErrBranchNotFound) {
+			return nil, fmt.Errorf("failed to inspect remote branch: %w", err)
+		}
 		cloneOpts = git.CloneOptions{
 			RemoteName:      "origin",
 			URL:             opts.URL,

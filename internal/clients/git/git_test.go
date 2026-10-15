@@ -1,8 +1,16 @@
 package git
 
 import (
+	"errors"
+	"net/http"
+	"net/http/cgi"
+	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path"
+	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/go-git/go-git/v5"
@@ -360,4 +368,56 @@ func TestCommitPreservesFileMode(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, filemode.Executable, entry.Mode, name)
 	}
+}
+
+func TestGetLatestCommitRemoteBranchNotFound(t *testing.T) {
+	baseRepo := BaseSuite{}
+	baseRepo.BuildBasicRepository()
+
+	_, err := GetLatestCommitRemote(ListOptions{
+		URL:    baseRepo.GetBasicLocalRepositoryURL(),
+		Branch: "missing-branch",
+	})
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrBranchNotFound))
+}
+
+// A failed branch lookup that is not "branch not found" must not be treated as a new branch:
+// that path empties the worktree, so the next commit would delete every existing file.
+func TestCloneFailsOnTransientBranchLookupError(t *testing.T) {
+	gitExecPath, err := exec.Command("git", "--exec-path").Output()
+	if err != nil {
+		t.Skip("git not available")
+	}
+
+	baseRepo := BaseSuite{}
+	baseRepo.BuildBasicRepository()
+	dotGit := baseRepo.GetBasicLocalRepositoryURL()
+
+	backend := &cgi.Handler{
+		Path: filepath.Join(strings.TrimSpace(string(gitExecPath)), "git-http-backend"),
+		Env: []string{
+			"GIT_PROJECT_ROOT=" + filepath.Dir(dotGit),
+			"GIT_HTTP_EXPORT_ALL=1",
+		},
+	}
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			http.Error(w, "unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		backend.ServeHTTP(w, r)
+	}))
+	defer srv.Close()
+
+	repo, err := Clone(CloneOptions{
+		URL:    srv.URL + "/" + filepath.Base(dotGit),
+		Branch: "master",
+	})
+	if repo != nil {
+		defer repo.Cleanup()
+	}
+	require.Error(t, err)
+	assert.False(t, errors.Is(err, ErrBranchNotFound))
 }

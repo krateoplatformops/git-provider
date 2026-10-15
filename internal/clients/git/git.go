@@ -335,7 +335,7 @@ func (s *Repo) UpdateIndex(idx *IndexOptions) error {
 			e.Mode = fromEntry.Mode
 		}
 	}
-	return nil
+	return s.storer.SetIndex(toIdx)
 }
 func Clone(opts CloneOptions) (*Repo, error) {
 	tmpDir, err := os.MkdirTemp(opts.HomeDir, "git-provider-clone-*")

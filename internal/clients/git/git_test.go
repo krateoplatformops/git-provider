@@ -2,9 +2,12 @@ package git
 
 import (
 	"os"
+	"path"
 	"testing"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -309,4 +312,52 @@ func TestPush(t *testing.T) {
 		err = repo.Push("origin", "new-branch", false)
 		require.NoError(t, err)
 	})
+}
+func TestCommitPreservesFileMode(t *testing.T) {
+	baseRepo := BaseSuite{}
+	baseRepo.BuildBasicRepository()
+
+	writeFile := func(t *testing.T, repo *Repo, name string, perm os.FileMode) {
+		t.Helper()
+		require.NoError(t, repo.FS().MkdirAll(path.Dir(name), 0755))
+		f, err := repo.FS().OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, perm)
+		require.NoError(t, err)
+		_, err = f.Write([]byte("#!/bin/sh\necho hi\n"))
+		require.NoError(t, err)
+		require.NoError(t, f.Close())
+	}
+
+	files := []string{"run.sh", "scripts/nested/run.sh"}
+
+	origin, err := Clone(CloneOptions{URL: baseRepo.GetBasicLocalRepositoryURL(), Branch: "master"})
+	require.NoError(t, err)
+	defer origin.Cleanup()
+	for _, name := range files {
+		writeFile(t, origin, name, 0755)
+	}
+	_, err = origin.Commit(".", "Add executables", &IndexOptions{OriginRepo: origin, FromPath: "/", ToPath: "/"})
+	require.NoError(t, err)
+
+	target, err := Clone(CloneOptions{URL: baseRepo.GetBasicLocalRepositoryURL(), Branch: "master"})
+	require.NoError(t, err)
+	defer target.Cleanup()
+	for _, name := range files {
+		writeFile(t, target, name, 0644)
+	}
+	hash, err := target.Commit(".", "Copy executables", &IndexOptions{
+		OriginRepo: origin,
+		FromPath:   "/",
+		ToPath:     "/",
+	})
+	require.NoError(t, err)
+
+	commit, err := target.repo.CommitObject(plumbing.NewHash(hash))
+	require.NoError(t, err)
+	tree, err := commit.Tree()
+	require.NoError(t, err)
+	for _, name := range files {
+		entry, err := tree.FindEntry(name)
+		require.NoError(t, err)
+		assert.Equal(t, filemode.Executable, entry.Mode, name)
+	}
 }
